@@ -1,0 +1,505 @@
+openapi: 3.1.0
+info:
+  title: Siren Affiliate Platform API
+  version: 0.1.0
+  summary: Headless affiliate & incentive tracking API for the Siren SaaS.
+  description: |
+    The Siren API lets any commerce stack record sales, refunds, and referred
+    visits, subscribe to program events via signed webhooks, and reconcile
+    Siren's ledger against its own.
+
+    This document describes the **developer-facing surface**: event ingestion,
+    webhooks, API keys, and read endpoints for reconciliation. The full admin
+    surface used by the Siren dashboard is intentionally out of scope here.
+
+    All requests authenticate with an API key as a bearer token
+    (`Authorization: Bearer sk_live_...`). Responses are wrapped as
+    `{ "data": ... }` on success and `{ "error": { "message", "code" } }` on
+    failure.
+  contact:
+    name: Siren
+    url: https://sirenaffiliates.com
+  license:
+    name: Proprietary
+servers:
+  - url: https://api.sirenaffiliates.com/siren/v1
+    description: Production
+  - url: http://localhost:8080/siren/v1
+    description: Local development
+security:
+  - apiKey: []
+tags:
+  - name: Events
+    description: Ingest commerce and tracking events.
+  - name: Webhooks
+    description: Subscribe to program events; delivered as signed HTTP callbacks.
+  - name: API Keys
+    description: Manage API keys.
+  - name: Reconciliation
+    description: Read Siren's ledger to reconcile against your own records.
+paths:
+  /event/sale:
+    post:
+      tags: [Events]
+      operationId: recordSale
+      summary: Record a completed sale
+      description: |
+        Records a sale so conversions and payouts compute for the attributed
+        collaborator. `total` is in major currency units (9.99 = $9.99). If
+        `items` are supplied, reward pools compute `amount × quantity` per line;
+        otherwise `total` is treated as one line. The opportunity id is returned
+        in the `X-Siren-OID` response header.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SalePayload' }
+      responses:
+        '200':
+          description: Sale accepted.
+          headers:
+            X-Siren-OID: { $ref: '#/components/headers/XSirenOID' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+  /event/refund:
+    post:
+      tags: [Events]
+      operationId: recordRefund
+      summary: Record a refund
+      description: |
+        Reverses a previously recorded sale, matched by `(externalId, source)`.
+        Returns 404 if no matching sale transaction exists.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RefundPayload' }
+      responses:
+        '200':
+          description: Refund accepted.
+          headers:
+            X-Siren-OID: { $ref: '#/components/headers/XSirenOID' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /event/site-visited:
+    post:
+      tags: [Events]
+      operationId: recordSiteVisited
+      summary: Record a referred visit
+      description: |
+        Records a referred visit and opens an opportunity attributed to the
+        given collaborator.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SiteVisitedPayload' }
+      responses:
+        '200':
+          description: Visit accepted.
+          headers:
+            X-Siren-OID: { $ref: '#/components/headers/XSirenOID' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /event/{eventSlug}:
+    post:
+      tags: [Events]
+      operationId: recordEvent
+      summary: Record a custom event
+      description: |
+        Ingests any event type registered on the organization, including custom
+        event types. The three built-in slugs are `sale`, `refund`, and
+        `site-visited`.
+      parameters:
+        - name: eventSlug
+          in: path
+          required: true
+          schema: { type: string }
+          example: loyalty-points-earned
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        '200':
+          description: Event accepted.
+          headers:
+            X-Siren-OID: { $ref: '#/components/headers/XSirenOID' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /webhooks:
+    get:
+      tags: [Webhooks]
+      operationId: listWebhookSubscriptions
+      summary: List webhook subscriptions
+      responses:
+        '200':
+          description: Subscriptions (bare array).
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/WebhookSubscription' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [Webhooks]
+      operationId: createWebhookSubscription
+      summary: Create a webhook subscription
+      description: |
+        Registers a URL to receive event callbacks. The response includes
+        `signingSecret`, returned **once** — store it to verify future
+        deliveries. Deliveries are signed with
+        `X-Siren-Signature: sha256=<hmac-sha256(rawBody, signingSecret)>`.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/WebhookSubscriptionCreate' }
+      responses:
+        '201':
+          description: Subscription created.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/WebhookSubscription'
+                  - type: object
+                    properties:
+                      signingSecret:
+                        type: string
+                        description: HMAC signing secret. Returned once.
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /webhooks/{id}:
+    get:
+      tags: [Webhooks]
+      operationId: getWebhookSubscription
+      summary: Get a webhook subscription
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200':
+          description: Subscription (bare object).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/WebhookSubscription' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Webhooks]
+      operationId: deleteWebhookSubscription
+      summary: Delete a webhook subscription
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { description: Deleted. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api-keys:
+    get:
+      tags: [API Keys]
+      operationId: listApiKeys
+      summary: List API keys
+      responses:
+        '200':
+          description: API keys (bare array, without raw key material).
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/ApiKey' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [API Keys]
+      operationId: createApiKey
+      summary: Create an API key
+      description: |
+        Creates a new API key. The plaintext `rawKey` (`sk_live_...`) is
+        returned **once** and cannot be retrieved later.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ApiKeyCreate' }
+      responses:
+        '201':
+          description: API key created.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiKey'
+                  - type: object
+                    properties:
+                      rawKey:
+                        type: string
+                        description: Plaintext key. Returned once.
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '422': { $ref: '#/components/responses/ValidationError' }
+  /api-keys/{id}:
+    delete:
+      tags: [API Keys]
+      operationId: revokeApiKey
+      summary: Revoke an API key
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer } }
+      responses:
+        '200': { description: Revoked. }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /conversions:
+    get:
+      tags: [Reconciliation]
+      operationId: listConversions
+      summary: List conversions
+      parameters:
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/PerPage' }
+      responses:
+        '200': { $ref: '#/components/responses/PaginatedList' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /transactions:
+    get:
+      tags: [Reconciliation]
+      operationId: listTransactions
+      summary: List transactions
+      parameters:
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/PerPage' }
+      responses:
+        '200': { $ref: '#/components/responses/PaginatedList' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /obligations:
+    get:
+      tags: [Reconciliation]
+      operationId: listObligations
+      summary: List obligations
+      parameters:
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/PerPage' }
+      responses:
+        '200': { $ref: '#/components/responses/PaginatedList' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /payouts:
+    get:
+      tags: [Reconciliation]
+      operationId: listPayouts
+      summary: List payouts
+      parameters:
+        - { $ref: '#/components/parameters/Page' }
+        - { $ref: '#/components/parameters/PerPage' }
+      responses:
+        '200': { $ref: '#/components/responses/PaginatedList' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+components:
+  securitySchemes:
+    apiKey:
+      type: http
+      scheme: bearer
+      bearerFormat: sk_live_...
+      description: An API key minted in the Siren dashboard or via createApiKey.
+  headers:
+    XSirenOID:
+      description: The opportunity (tracking) id associated with the event.
+      schema: { type: integer }
+  parameters:
+    Page:
+      name: page
+      in: query
+      schema: { type: integer, minimum: 1, default: 1 }
+    PerPage:
+      name: perPage
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 25 }
+  schemas:
+    SalePayload:
+      type: object
+      required: [source, externalId, total, trackingId]
+      properties:
+        source:
+          type: string
+          description: Commerce source identifier.
+          example: stripe
+        externalId:
+          type: string
+          description: Your order/transaction id; used to match refunds later.
+          example: cs_test_a1b2c3
+        total:
+          type: number
+          description: Order total in major currency units.
+          example: 49.99
+        trackingId:
+          type: integer
+          description: Opportunity id from the Siren tracking cookie / attribution.
+          example: 4021
+        currency:
+          type: string
+          description: ISO currency code.
+          default: USD
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/LineItem' }
+    LineItem:
+      type: object
+      required: [name, quantity, amount]
+      properties:
+        externalId: { type: string }
+        name: { type: string, example: Pro Plan (annual) }
+        quantity: { type: integer, minimum: 1, default: 1 }
+        amount:
+          type: number
+          description: Per-unit price in major currency units.
+          example: 49.99
+    RefundPayload:
+      type: object
+      required: [source, externalId]
+      properties:
+        source: { type: string, example: stripe }
+        externalId: { type: string, example: cs_test_a1b2c3 }
+    SiteVisitedPayload:
+      type: object
+      required: [collaboratorId]
+      properties:
+        collaboratorId: { type: integer, example: 88 }
+        userId: { type: integer, example: 12345 }
+    WebhookSubscription:
+      type: object
+      properties:
+        id: { type: integer }
+        targetUrl: { type: string, format: uri }
+        events:
+          type: array
+          items: { $ref: '#/components/schemas/WebhookEventType' }
+        description: { type: string }
+        status: { type: string, example: active }
+        createdAt: { type: string, format: date-time }
+    WebhookSubscriptionCreate:
+      type: object
+      required: [targetUrl, events]
+      properties:
+        targetUrl: { type: string, format: uri, example: https://example.com/webhooks/siren }
+        events:
+          type: array
+          items: { $ref: '#/components/schemas/WebhookEventType' }
+          example: ['conversion.approved', 'payout.paid']
+        description: { type: string }
+    WebhookEventType:
+      type: string
+      description: A subscribable event type. Use `*` to subscribe to all.
+      enum:
+        - '*'
+        - allocation.completed
+        - collaborator.created
+        - collaborator.registered
+        - conversion.approved
+        - conversion.created
+        - conversion.rejected
+        - conversion.renewed
+        - coupon.applied
+        - distribution.completed
+        - engagement.awarded
+        - engagement.completed
+        - engagement.created
+        - fulfillment.created
+        - fulfillment.updated
+        - lead.created
+        - metrics.updated
+        - obligation.completed
+        - obligation.created
+        - opportunity.created
+        - opportunity.invalidated
+        - payout.created
+        - payout.paid
+        - refund.created
+        - renewal.created
+        - sale.created
+        - transaction.completed
+        - transaction.created
+    ApiKey:
+      type: object
+      properties:
+        id: { type: integer }
+        keyPrefix: { type: string, example: sk_live_a1b2c3d4 }
+        label: { type: string }
+        status: { type: string, example: active }
+        scopes:
+          type: array
+          items: { type: string }
+        createdAt: { type: string, format: date-time }
+        expiresAt: { type: string, format: date-time, nullable: true }
+        lastUsedAt: { type: string, format: date-time, nullable: true }
+    ApiKeyCreate:
+      type: object
+      required: [label]
+      properties:
+        label: { type: string, example: Production server }
+        scopes:
+          type: array
+          items: { type: string }
+          description: Omit for full access.
+    Error:
+      type: object
+      description: |
+        `error` is polymorphic. Most endpoints return a plain string message;
+        structured errors (e.g. login/entitlement denial) return an object with
+        `message`/`code`/`data`. Clients must handle both.
+      properties:
+        error:
+          oneOf:
+            - type: string
+            - type: object
+              properties:
+                message: { type: string }
+                code: { type: string }
+                data: { type: object, additionalProperties: true }
+  responses:
+    PaginatedList:
+      description: |
+        A bare JSON array of records. The estimated total count, when the
+        endpoint paginates, is returned in the `x-siren-estimated-count`
+        response header (not in the body).
+      headers:
+        x-siren-estimated-count:
+          schema: { type: integer }
+          description: Estimated total number of records across all pages.
+      content:
+        application/json:
+          schema:
+            type: array
+            items: { type: object, additionalProperties: true }
+    Unauthorized:
+      description: Missing or invalid API key.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Forbidden:
+      description: The API key lacks the required scope.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: Resource not found.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    ValidationError:
+      description: The request body failed validation.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    RateLimited:
+      description: Too many requests.
+      headers:
+        Retry-After:
+          schema: { type: integer }
+          description: Seconds to wait before retrying.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
