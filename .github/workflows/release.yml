@@ -10,8 +10,7 @@ name: Release
 #     Owner:            Novatorius
 #     Repository name:  siren-python
 #     Workflow name:    release.yml
-#     Environment:      pypi   (must match the `environment:` below; optional but
-#                              recommended — remove both if you don't use one)
+#     Environment:      (leave blank — this workflow uses no GitHub environment)
 #
 # The `id-token: write` permission is required for Trusted Publishing to work.
 
@@ -23,7 +22,6 @@ jobs:
   build-and-publish:
     name: Build and publish to PyPI
     runs-on: ubuntu-latest
-    environment: pypi
     permissions:
       id-token: write  # required for PyPI Trusted Publishing (OIDC)
 
