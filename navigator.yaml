@@ -13,3 +13,11 @@ knowledgeDependencies:
       - global-integration-testing-standards-introduction
       - global-e2e-testing-standards-introduction
       - global-pattern-decidability-doctrine
+      - global-do-it-right-not-easy
+      - global-recurring-defect-classes
+
+autoMerge:
+  enabled: true
+  rubric: global-auto-merge-review-rubric
+  allowedCategories: [docs]          # proven safe; widen per repo as trust grows
+  alwaysHuman: [payments, migrations, auth, security]
