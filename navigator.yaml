@@ -1,0 +1,15 @@
+initiative: siren
+ci:
+  setup: pip install -e ".[dev]"
+  test: pytest
+knowledgeDependencies:
+  - initiative: phpnomad
+    description: "Org-wide engineering doctrine"
+    critical:
+      - global-definition-of-done
+      - global-failure-and-logging-doctrine
+      - global-unit-testing-standards-modifying-existing-tests
+      - global-taxonomy-and-sdk-doctrine
+      - global-integration-testing-standards-introduction
+      - global-e2e-testing-standards-introduction
+      - global-pattern-decidability-doctrine
