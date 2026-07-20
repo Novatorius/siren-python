@@ -2,6 +2,7 @@ initiative: siren
 ci:
   setup: pip install -e ".[dev]"
   test: pytest
+  lint: mypy
 knowledgeDependencies:
   - initiative: phpnomad
     description: "Org-wide engineering doctrine"

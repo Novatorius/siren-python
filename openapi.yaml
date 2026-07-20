@@ -403,6 +403,10 @@ components:
         - conversion.rejected
         - conversion.renewed
         - coupon.applied
+        - credit.issued
+        - credit.redeemed
+        - currency.created
+        - currency.deleted
         - distribution.completed
         - engagement.awarded
         - engagement.completed

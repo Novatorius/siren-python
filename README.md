@@ -161,6 +161,11 @@ client.webhooks.subscriptions.delete(subscription.id)
 - **Automatic retries** — exponential backoff on network errors and 429/5xx for
   idempotent reads and event ingestion (never for secret-minting writes).
 - **Fully typed** — ships `py.typed`; works with mypy and Pyright out of the box.
+- **Typed taxonomy** — Siren's domain vocabulary as enums, so no magic strings
+  cross the boundary: `WebhookEventType`, `EventSlug`, and the status
+  vocabularies (`ConversionStatus`, `TransactionStatus`, `ObligationStatus`,
+  `PayoutStatus`, `FulfillmentStatus`, `OpportunityStatus`, `ApiKeyStatus`,
+  `WebhookSubscriptionStatus`).
 
 ### API keys
 
@@ -184,7 +189,8 @@ print(page.total)
 
 client.transactions.list()
 client.obligations.list()
-client.payouts.list(status="paid")  # extra filters pass through as query args
+# Extra filters pass through as query args; use the typed taxonomy for values.
+client.payouts.list(status=siren.PayoutStatus.PAID)
 ```
 
 ### Errors

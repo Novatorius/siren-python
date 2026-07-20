@@ -6,7 +6,7 @@ import hashlib
 import hmac
 import json
 from enum import Enum
-from typing import Any, List, Optional, Sequence, Union
+from typing import Any, Dict, List, Optional, Sequence, Union
 
 from ._client import HttpClient, parse_json
 from .errors import SignatureVerificationError
@@ -48,7 +48,7 @@ class WebhookSubscriptions:
         store it; it cannot be retrieved later. Pass
         ``events=[WebhookEventType.ALL]`` (``["*"]``) to subscribe to everything.
         """
-        payload: dict = {
+        payload: Dict[str, Any] = {
             "targetUrl": target_url,
             "events": [_event_value(event) for event in events],
         }
