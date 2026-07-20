@@ -87,7 +87,7 @@ class HttpClient:
     def _backoff_delay(self, attempt: int, error: SirenError) -> float:
         if isinstance(error, RateLimitError) and error.retry_after is not None:
             return float(error.retry_after)
-        return min(_INITIAL_BACKOFF * (2**attempt), _MAX_BACKOFF)
+        return float(min(_INITIAL_BACKOFF * (2**attempt), _MAX_BACKOFF))
 
 
 def parse_json(response: httpx.Response) -> Any:

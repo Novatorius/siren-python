@@ -1,4 +1,8 @@
-"""Typed result objects and the webhook event-type catalog."""
+"""Typed result objects and Siren's domain taxonomy (event and status catalogs).
+
+Siren owns these vocabularies; this module is the typed source for them so
+integrations never hand-roll magic strings.
+"""
 
 from __future__ import annotations
 
@@ -19,6 +23,10 @@ class WebhookEventType(str, Enum):
     CONVERSION_REJECTED = "conversion.rejected"
     CONVERSION_RENEWED = "conversion.renewed"
     COUPON_APPLIED = "coupon.applied"
+    CREDIT_ISSUED = "credit.issued"
+    CREDIT_REDEEMED = "credit.redeemed"
+    CURRENCY_CREATED = "currency.created"
+    CURRENCY_DELETED = "currency.deleted"
     DISTRIBUTION_COMPLETED = "distribution.completed"
     ENGAGEMENT_AWARDED = "engagement.awarded"
     ENGAGEMENT_COMPLETED = "engagement.completed"
@@ -38,6 +46,128 @@ class WebhookEventType(str, Enum):
     SALE_CREATED = "sale.created"
     TRANSACTION_COMPLETED = "transaction.completed"
     TRANSACTION_CREATED = "transaction.created"
+
+    def __str__(self) -> str:
+        return self.value
+
+
+class EventSlug(str, Enum):
+    """URL slugs for the built-in ingestion event types (``POST /event/{slug}``).
+
+    ``client.events.sale()`` / ``.refund()`` / ``.site_visited()`` already use
+    these internally; the members exist for code that routes slugs dynamically
+    (e.g. wrapping ``client.events.ingest``).
+    """
+
+    SALE = "sale"
+    REFUND = "refund"
+    SITE_VISITED = "site-visited"
+
+    def __str__(self) -> str:
+        return self.value
+
+
+class ConversionStatus(str, Enum):
+    """Statuses a conversion can hold (``client.conversions`` records and
+    ``conversion.*`` webhook payloads)."""
+
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    EXPIRED = "expired"
+    #: Soft-delete bucket written by the bulk delete action.
+    DELETED = "deleted"
+
+    def __str__(self) -> str:
+        return self.value
+
+
+class TransactionStatus(str, Enum):
+    """Statuses a transaction can hold (``client.transactions`` records and
+    ``transaction.*`` webhook payloads)."""
+
+    COMPLETE = "complete"
+    CANCELLED = "cancelled"
+    REFUNDED = "refunded"
+
+    def __str__(self) -> str:
+        return self.value
+
+
+class ObligationStatus(str, Enum):
+    """Statuses an obligation can hold (``client.obligations`` records and
+    ``obligation.*`` webhook payloads).
+
+    Note: Siren's machine paths (fulfillment generation, bulk actions) write
+    ``complete``, while its management REST surface accepts ``fulfilled`` —
+    both appear in the wild, so both are listed here.
+    """
+
+    PENDING = "pending"
+    COMPLETE = "complete"
+    FULFILLED = "fulfilled"
+    CANCELLED = "cancelled"
+
+    def __str__(self) -> str:
+        return self.value
+
+
+class PayoutStatus(str, Enum):
+    """Statuses a payout can hold (``client.payouts`` records and
+    ``payout.*`` webhook payloads)."""
+
+    UNPAID = "unpaid"
+    PROCESSING = "processing"
+    PAID = "paid"
+    FAILED = "failed"
+
+    def __str__(self) -> str:
+        return self.value
+
+
+class FulfillmentStatus(str, Enum):
+    """Statuses a fulfillment can hold (``fulfillment.created`` /
+    ``fulfillment.updated`` webhook payloads)."""
+
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETE = "complete"
+    FAILED = "failed"
+
+    def __str__(self) -> str:
+        return self.value
+
+
+class OpportunityStatus(str, Enum):
+    """Statuses an opportunity can hold (``opportunity.created`` /
+    ``opportunity.invalidated`` webhook payloads; the ``tracking_id`` on a
+    sale refers to an opportunity)."""
+
+    ACTIVE = "active"
+    INACTIVE = "inactive"
+    #: Set by Siren's invalidation service; never operator-settable.
+    INVALID = "invalid"
+
+    def __str__(self) -> str:
+        return self.value
+
+
+class ApiKeyStatus(str, Enum):
+    """Statuses an API key can hold (``client.api_keys`` records)."""
+
+    ACTIVE = "active"
+    REVOKED = "revoked"
+
+    def __str__(self) -> str:
+        return self.value
+
+
+class WebhookSubscriptionStatus(str, Enum):
+    """Statuses a webhook subscription can hold
+    (``client.webhooks.subscriptions`` records)."""
+
+    ACTIVE = "active"
+    PAUSED = "paused"
 
     def __str__(self) -> str:
         return self.value

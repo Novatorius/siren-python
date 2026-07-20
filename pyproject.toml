@@ -45,7 +45,7 @@ Documentation = "https://sirenaffiliates.com"
 Issues = "https://github.com/Novatorius/siren-python/issues"
 
 [project.optional-dependencies]
-dev = ["pytest>=7.0", "respx>=0.21", "build>=1.0"]
+dev = ["pytest>=7.0", "respx>=0.21", "build>=1.0", "mypy>=1.8"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/siren"]
@@ -64,3 +64,7 @@ include = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+
+[tool.mypy]
+strict = true
+files = ["src/siren"]

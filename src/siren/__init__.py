@@ -30,11 +30,20 @@ from .errors import (
 )
 from .types import (
     ApiKey,
+    ApiKeyStatus,
+    ConversionStatus,
     EventResult,
+    EventSlug,
+    FulfillmentStatus,
     ListPage,
+    ObligationStatus,
+    OpportunityStatus,
+    PayoutStatus,
+    TransactionStatus,
     WebhookEvent,
     WebhookEventType,
     WebhookSubscription,
+    WebhookSubscriptionStatus,
 )
 
 __all__ = [
@@ -59,4 +68,14 @@ __all__ = [
     "WebhookEvent",
     "WebhookEventType",
     "WebhookSubscription",
+    # Taxonomy
+    "ApiKeyStatus",
+    "ConversionStatus",
+    "EventSlug",
+    "FulfillmentStatus",
+    "ObligationStatus",
+    "OpportunityStatus",
+    "PayoutStatus",
+    "TransactionStatus",
+    "WebhookSubscriptionStatus",
 ]

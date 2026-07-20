@@ -152,8 +152,9 @@ class TestSubscriptions:
 
 
 class TestWebhookEventType:
-    def test_all_27_types_plus_wildcard(self):
-        assert len(siren.WebhookEventType) == 28
+    def test_all_31_types_plus_wildcard(self):
+        # The full canonical set is pinned in tests/test_taxonomy.py.
+        assert len(siren.WebhookEventType) == 32
 
     def test_wildcard_member(self):
         assert siren.WebhookEventType.ALL == "*"
@@ -164,7 +165,9 @@ class TestWebhookEventType:
             "*",
             "allocation.completed", "collaborator.created", "collaborator.registered",
             "conversion.approved", "conversion.created", "conversion.rejected",
-            "conversion.renewed", "coupon.applied", "distribution.completed",
+            "conversion.renewed", "coupon.applied", "credit.issued",
+            "credit.redeemed", "currency.created", "currency.deleted",
+            "distribution.completed",
             "engagement.awarded", "engagement.completed", "engagement.created",
             "fulfillment.created", "fulfillment.updated", "lead.created",
             "metrics.updated", "obligation.completed", "obligation.created",
