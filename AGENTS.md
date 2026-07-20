@@ -41,6 +41,7 @@ after every change and leave them green:
 ```bash
 pip install -e ".[dev]"   # ci.setup
 pytest   # ci.test
+mypy   # ci.lint
 ```
 
 What "done" means (PR audit, testing tiers, UAT proof) is defined in the KB:
