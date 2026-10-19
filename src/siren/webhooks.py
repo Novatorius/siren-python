@@ -173,7 +173,8 @@ class Webhooks:
         ``event.type`` comes from ``event_type``. For a connected site's
         versioned envelope, ``type``, ``data`` and ``id`` come from the body.
         Raises :class:`SignatureVerificationError` when the signature is
-        missing or does not match.
+        missing or does not match, when the body is not a JSON object, and
+        when a plain subscription's delivery arrives without ``event_type``.
         """
         if not signature_header:
             raise SignatureVerificationError(
@@ -204,8 +205,19 @@ class Webhooks:
                 raw=payload,
             )
 
+        # A plain subscription's body never names its event. Without the
+        # X-Siren-Event header there is no type to dispatch on, so refuse the
+        # delivery loudly rather than hand back an event with an empty type
+        # that matches no handler. Code written for 0.1.0 passes no headers.
+        if not event_type or not event_type.strip():
+            raise SignatureVerificationError(
+                "Siren names a delivery's event in the X-Siren-Event header, and this body "
+                "does not carry it. Pass the header as event_type (and X-Siren-Delivery as "
+                "delivery_id) to construct_event."
+            )
+
         return WebhookEvent(
-            type=event_type or "",
+            type=event_type.strip(),
             data=payload,
             delivery_id=delivery_id,
             raw=payload,

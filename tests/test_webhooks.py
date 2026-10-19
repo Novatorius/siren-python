@@ -89,14 +89,42 @@ class TestConstructEvent:
         assert event.type == "currency.created"
         assert event.data["type"] == "points"
 
-    def test_type_empty_without_event_header(self, client):
+    def test_plain_body_without_event_header_raises(self, client):
+        # A 0.1.0 caller passes no headers. A plain subscription's body names
+        # no event, so the SDK refuses it instead of returning an event with
+        # an empty type that no handler matches.
         body = json.dumps({"payoutId": 7}).encode()
+
+        with pytest.raises(siren.SignatureVerificationError, match="X-Siren-Event"):
+            client.webhooks.construct_event(body, sign(body), SECRET)
+
+        with pytest.raises(siren.SignatureVerificationError, match="X-Siren-Event"):
+            client.webhooks.construct_event(body, sign(body), SECRET, event_type="  ")
+
+    def test_payload_type_key_is_never_the_event_type(self, client):
+        # currency.created's payload has its own `type`. Without the header it
+        # must not be taken for the event type.
+        body = json.dumps({"code": "PTS", "type": "points"}).encode()
+
+        with pytest.raises(siren.SignatureVerificationError):
+            client.webhooks.construct_event(body, sign(body), SECRET)
+
+    def test_envelope_needs_no_headers(self, client):
+        envelope = {
+            "version": 1,
+            "id": "evt_feed",
+            "type": "webhook.test",
+            "kind": "test",
+            "data": {"nonce": "abc"},
+            "records": {},
+        }
+        body = json.dumps(envelope).encode()
 
         event = client.webhooks.construct_event(body, sign(body), SECRET)
 
-        assert event.type == ""
-        assert event.data == {"payoutId": 7}
-        assert event.delivery_id is None
+        assert event.type == "webhook.test"
+        assert event.delivery_id == "evt_feed"
+        assert event.data == {"nonce": "abc"}
 
     def test_connected_site_envelope_is_unwrapped(self, client):
         # A Property-bound subscription gets WebhookDeliveryService's

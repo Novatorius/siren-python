@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+The next release is 0.2.0, a minor bump, because the changes below break
+existing callers. Each one follows a rule Siren already enforces.
+
+### Breaking
+
+- `api_keys.create` requires the `scopes` keyword and raises `ValueError`
+  for an empty list. Code that passed only `label` now raises `TypeError`.
+  Siren answers 400 to a key without scopes.
+- `webhooks.construct_event` returns the body as `event.data`, and raises
+  `SignatureVerificationError` when a bare payload arrives without
+  `event_type`. The call from 0.1.0, which passed no headers, used to return
+  an event with an empty type for every real delivery, which no handler
+  matched. Pass the `X-Siren-Event` header as `event_type`.
+- `ListPage.page` and `ListPage.per_page` come from Siren's list body. They
+  used to echo the arguments, even though Siren ignored them.
+
 ### Fixed
 
 - Reconciliation readers send Siren's `number` and `offset` paging params.
@@ -25,10 +41,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `raw`.
 - Errors read `error.context` as `data` when the body has no `data`, and use
   its `type` as `code` when there is no `code`. A failed field check, which
-  Siren answers with 400, now exposes its messages on
-  `BadRequestError.field_errors`.
-- `api_keys.create` requires `scopes`. Siren refuses a key without scopes,
-  and issues event scopes only (`event:*`, `event:{slug}` or `*`).
+  Siren answers with 400, now exposes its broken rules on
+  `BadRequestError.field_errors`, a list of `{field, message, type,
+  context}` entries in Siren's order.
+- `api_keys.create` documents that Siren issues event scopes only
+  (`event:*`, `event:{slug}` or `*`).
 - `ApiKey.created_at` and `WebhookSubscription.created_at` read Siren's
   `dateCreated`. Both gain `property_id`, and `ApiKey` gains `revoked_at`.
 - `api_keys.list` and `webhooks.subscriptions.list` take `number` and

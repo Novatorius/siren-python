@@ -98,8 +98,10 @@ the event in one call.
 
 The body is the event's payload alone, such as `{"conversionId": 991}`. The
 event type arrives in the `X-Siren-Event` header and the event id in
-`X-Siren-Delivery`, so pass both headers along. The event id stays the same
-when Siren retries a delivery, so use it to drop repeats.
+`X-Siren-Delivery`, so pass both headers along. Without `event_type`,
+`construct_event` raises `SignatureVerificationError`, because the body alone
+does not name the event. The event id stays the same when Siren retries a
+delivery, so use it to drop repeats.
 
 ```python
 import siren
