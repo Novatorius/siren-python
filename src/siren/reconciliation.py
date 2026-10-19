@@ -40,9 +40,11 @@ class ListResource:
     Deliberately thin: these exist to reconcile Siren's ledger against your
     own records, not to be a full admin client.
 
-    These routes take a signed-in dashboard session or a connected site's
-    token. Siren Cloud does not accept an API key on them, because an API key
-    only sends events.
+    These routes take an API key that holds the collection's ledger scope,
+    such as ``ledger:conversions:read``, a signed-in dashboard session, or a
+    connected site's token. A key bound to one store reads only its own
+    store's conversions, transactions and obligations, and is refused on
+    payouts with :class:`~siren.StoreKeyNotAllowedError`.
     """
 
     _path: str = ""
@@ -55,6 +57,7 @@ class ListResource:
         *,
         page: Optional[int] = None,
         per_page: Optional[int] = None,
+        property_id: Optional[int] = None,
         **filters: Any,
     ) -> ListPage:
         """Fetch one page of records.
@@ -63,9 +66,13 @@ class ListResource:
         ``page`` and ``per_page`` are turned into those, with ``per_page``
         capped at 200, the largest page Siren serves. ``number`` and
         ``offset`` may also be passed directly, and win over ``page`` and
-        ``per_page``. Any other keyword filters pass through as query args
-        (snake_case names are converted to camelCase on the wire).
+        ``per_page``. ``property_id`` narrows an organization-wide read to
+        one store, and is sent as ``propertyId``. Any other keyword filters
+        pass through as query args (snake_case names are converted to
+        camelCase on the wire).
         """
+        if property_id is not None:
+            filters["property_id"] = property_id
         params: Dict[str, Any] = {}
         for key, value in filters.items():
             if value is not None:
@@ -116,24 +123,24 @@ class ListResource:
 
 
 class Conversions(ListResource):
-    """``siren.conversions`` — ``GET /conversions``."""
+    """``siren.conversions`` — ``GET /conversions``. An API key needs ``ledger:conversions:read``."""
 
     _path = "/conversions"
 
 
 class Transactions(ListResource):
-    """``siren.transactions`` — ``GET /transactions``."""
+    """``siren.transactions`` — ``GET /transactions``. An API key needs ``ledger:transactions:read``."""
 
     _path = "/transactions"
 
 
 class Obligations(ListResource):
-    """``siren.obligations`` — ``GET /obligations``."""
+    """``siren.obligations`` — ``GET /obligations``. An API key needs ``ledger:obligations:read``."""
 
     _path = "/obligations"
 
 
 class Payouts(ListResource):
-    """``siren.payouts`` — ``GET /payouts``."""
+    """``siren.payouts`` — ``GET /payouts``. An API key needs ``ledger:payouts:read``."""
 
     _path = "/payouts"

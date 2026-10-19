@@ -2,17 +2,20 @@
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Sequence
+from enum import Enum
+from typing import Dict, List, Optional, Sequence, Union
 
 from ._client import HttpClient, parse_json
+from .scopes import ApiKeyScope
 from .types import ApiKey
 
 
 class ApiKeys:
     """``siren.api_keys`` — create, list, and revoke API keys.
 
-    These routes take an organization admin's dashboard session. Siren Cloud
-    does not accept an API key on them, because an API key only sends events.
+    These routes take an organization admin's dashboard session. No API key
+    scope reaches them, so Siren answers an API key with a 401 that the SDK
+    raises as :class:`~siren.ApiKeyNotAcceptedError`.
     """
 
     def __init__(self, client: HttpClient) -> None:
@@ -21,7 +24,7 @@ class ApiKeys:
     def create(
         self,
         *,
-        scopes: Sequence[str],
+        scopes: Sequence[Union[str, ApiKeyScope]],
         label: Optional[str] = None,
         expires_at: Optional[str] = None,
         property_id: Optional[int] = None,
@@ -32,22 +35,34 @@ class ApiKeys:
         credential) is provided **once** and cannot be retrieved later — store
         it securely.
 
-        ``scopes`` is required and must not be empty. An API key sends events
-        and does nothing else, so Siren issues event scopes only:
-        ``event:*`` for every event Siren takes with a wildcard, or
-        ``event:{slug}`` for one event type. ``*`` is also accepted. A
-        resource scope such as ``programs:read`` is refused with a 400.
+        ``scopes`` is required and must not be empty. Take them from
+        :class:`~siren.ApiKeyScope`. Event scopes (``event:*``, or
+        ``event:{slug}`` for one event type) send events. The ledger scopes,
+        such as ``ledger:conversions:read``, read conversions, transactions,
+        obligations and payouts. ``webhook-subscriptions:read`` and
+        ``webhook-subscriptions:manage`` read and manage webhook
+        subscriptions. ``*`` is also accepted. An older resource scope such
+        as ``programs:read`` or ``conversions:read`` is refused with a 400.
 
         ``label`` is an optional name for the key, and is left out of the
-        request when not given. ``expires_at`` is an ISO 8601 time in the future when the key stops
-        working. ``property_id`` ties the key to one of the organization's
-        Properties.
+        request when not given. ``expires_at`` is an ISO 8601 time in the
+        future when the key stops working. ``property_id`` binds the key to
+        one of the organization's stores (Properties). Siren stamps it on the
+        key's events, the key reads only that store's conversions,
+        transactions and obligations, and Siren refuses it on payouts and
+        webhook subscriptions with :class:`~siren.StoreKeyNotAllowedError`.
         """
         if isinstance(scopes, str) or not scopes:
             raise ValueError(
-                "scopes is required: pass event scopes such as ['event:*'] or ['event:sale']"
+                "scopes is required: pass scopes such as [ApiKeyScope.ALL_EVENTS] "
+                "or [ApiKeyScope.LEDGER_CONVERSIONS_READ]"
             )
-        payload: Dict[str, object] = {"scopes": list(scopes)}
+        payload: Dict[str, object] = {
+            "scopes": [
+                scope.value if isinstance(scope, Enum) else str(scope)
+                for scope in scopes
+            ]
+        }
         if label is not None:
             payload["label"] = label
         if expires_at is not None:

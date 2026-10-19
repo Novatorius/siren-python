@@ -32,8 +32,11 @@ def _event_value(event: Union[str, WebhookEventType, Enum]) -> str:
 class WebhookSubscriptions:
     """``siren.webhooks.subscriptions`` — manage webhook subscriptions.
 
-    These routes take a signed-in dashboard session. Siren Cloud does not
-    accept an API key on them, because an API key only sends events.
+    These routes take an API key with a webhook scope, or a signed-in
+    dashboard session. ``webhook-subscriptions:read`` opens :meth:`list`, and
+    ``webhook-subscriptions:manage`` opens every method here. The key must be
+    organization-wide, because subscriptions are not kept by store. A key
+    bound to one store gets a :class:`~siren.StoreKeyNotAllowedError`.
     """
 
     def __init__(self, client: HttpClient) -> None:

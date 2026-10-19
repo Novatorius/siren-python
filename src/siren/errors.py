@@ -1,6 +1,7 @@
 """Typed exception hierarchy for the Siren SDK.
 
-One base error (:class:`SirenError`), with subclasses selected by HTTP status.
+One base error (:class:`SirenError`), with subclasses selected by HTTP status,
+and by ``error.code`` for an API key's refusals (:class:`ErrorCode`).
 Every HTTP-derived error carries ``message``, ``code`` (the API's
 machine-readable ``error.code`` when present), ``status_code``, and ``data``
 (the API's ``error.data`` payload, or its ``error.context`` when there is no
@@ -10,6 +11,28 @@ machine-readable ``error.code`` when present), ``status_code``, and ``data``
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
+
+
+class ErrorCode:
+    """The ``error.code`` values this SDK raises a dedicated error for.
+
+    Compare ``error.code`` against these, not the message, which can change.
+    """
+
+    #: 401: the route does not accept an API key, such as every ``/api-keys``
+    #: route. It takes a signed-in dashboard session.
+    #: :class:`ApiKeyNotAcceptedError`.
+    API_KEY_NOT_ACCEPTED = "api_key_not_accepted"
+
+    #: 403: the API key holds none of the scopes the route needs.
+    #: ``error.context.scope`` names one and ``error.context.anyOf`` lists
+    #: every scope that opens the route. :class:`MissingScopeError`.
+    MISSING_SCOPE = "missing_scope"
+
+    #: 403: an API key bound to one store asked for records that are not kept
+    #: by store, such as payouts or webhook subscriptions.
+    #: :class:`StoreKeyNotAllowedError`.
+    STORE_KEY_NOT_ALLOWED = "store_key_not_allowed"
 
 
 class SirenError(Exception):
@@ -77,11 +100,67 @@ class BadRequestError(SirenError):
 
 
 class AuthenticationError(SirenError):
-    """401 — missing or invalid API key."""
+    """401 — missing, invalid, expired or revoked API key."""
+
+
+class ApiKeyNotAcceptedError(AuthenticationError):
+    """401 with ``code`` ``api_key_not_accepted``.
+
+    The key may be valid, but the route takes a signed-in dashboard session
+    instead, as every ``api_keys`` route does. Retrying with the same key
+    fails again.
+    """
 
 
 class PermissionError(SirenError):  # noqa: A001 - name mandated by the SDK contract
-    """403 — the API key lacks the required scope."""
+    """403 — the credential may not do this."""
+
+
+def _context(data: Any) -> Dict[str, Any]:
+    return data if isinstance(data, dict) else {}
+
+
+class MissingScopeError(PermissionError):
+    """403 with ``code`` ``missing_scope``.
+
+    The API key holds none of the scopes the route needs, such as a key
+    without ``ledger:conversions:read`` reading conversions. Create a key
+    that holds one of :attr:`any_of`. Retrying with the same key fails again.
+    """
+
+    @property
+    def scope(self) -> Optional[str]:
+        """The scope the route needs, from ``error.context.scope``, when Siren names it."""
+        scope = _context(self.data).get("scope")
+        return scope if isinstance(scope, str) and scope else None
+
+    @property
+    def any_of(self) -> List[str]:
+        """Every scope that opens the route, from ``error.context.anyOf``.
+
+        Holding any one is enough. Empty when Siren does not list them.
+        """
+        any_of = _context(self.data).get("anyOf")
+        if not isinstance(any_of, list):
+            return []
+        return [scope for scope in any_of if isinstance(scope, str) and scope]
+
+
+class StoreKeyNotAllowedError(PermissionError):
+    """403 with ``code`` ``store_key_not_allowed``.
+
+    An API key bound to one store asked for payouts or webhook subscriptions,
+    which are not kept by store. Use an organization-wide key, one created
+    without a ``property_id``.
+    """
+
+    @property
+    def property_id(self) -> Optional[int]:
+        """The store the key is bound to, from ``error.context.propertyId``, when Siren names it."""
+        property_id = _context(self.data).get("propertyId")
+        if isinstance(property_id, bool) or not isinstance(property_id, int):
+            return None
+        return property_id
 
 
 class NotFoundError(SirenError):
@@ -143,6 +222,12 @@ _STATUS_TO_ERROR = {
     429: RateLimitError,
 }
 
+_CODE_TO_ERROR = {
+    (401, ErrorCode.API_KEY_NOT_ACCEPTED): ApiKeyNotAcceptedError,
+    (403, ErrorCode.MISSING_SCOPE): MissingScopeError,
+    (403, ErrorCode.STORE_KEY_NOT_ALLOWED): StoreKeyNotAllowedError,
+}
+
 
 def error_from_response(response: Any) -> SirenError:
     """Build the right :class:`SirenError` subclass from an HTTP response.
@@ -181,7 +266,7 @@ def error_from_response(response: Any) -> SirenError:
         if code is None and isinstance(data, dict) and isinstance(data.get("type"), str):
             code = data["type"]
 
-    error_cls = _STATUS_TO_ERROR.get(status, ApiError)
+    error_cls = _CODE_TO_ERROR.get((status, code)) or _STATUS_TO_ERROR.get(status, ApiError)
     if error_cls is RateLimitError:
         retry_after: Optional[int] = None
         header = response.headers.get("Retry-After")
