@@ -172,10 +172,22 @@ def test_every_http_error_subclasses_siren_error():
 def test_failed_validation_400_reads_context(mocked_api):
     # Siren's SaaS RestStrategy renders a RestException as
     # {"error": {"message", "code"?, "context"}}, and ValidationMiddleware puts
-    # {"type": "VALIDATION_FAILED", "failedValidations": {...}} in the context
-    # with a 400. The SDK used to read only `error.data`, which this shape
-    # never has, so `data`, `code` and the field errors were always empty.
-    failures = {"trackingId": ["must be a whole number from 0 to 9007199254740991"]}
+    # {"type": "VALIDATION_FAILED", "failedValidations": [...]} in the context
+    # with a 400. failedValidations is a list with one entry per broken rule,
+    # each {field, message, type, context} (PHPNomad's
+    # ValidationSet::getValidationFailures(), merged into one list, and Siren's
+    # SaveCollaboratorTrackingAlias, which builds the same shape by hand). The
+    # SDK used to read only `error.data`, which this shape never has, so
+    # `data`, `code` and the field errors were always empty.
+    failures = [
+        {
+            "field": "trackingId",
+            "message": "trackingId must be a whole number from 0 to 9007199254740991.",
+            "type": "INVALID_WHOLE_NUMBER",
+            "context": {"min": 0, "max": 9007199254740991},
+        },
+        {"field": "source", "message": "source is required.", "type": "REQUIRED"},
+    ]
     mocked_api.post("/event/sale").respond(
         400,
         json={
@@ -193,6 +205,7 @@ def test_failed_validation_400_reads_context(mocked_api):
 
     assert excinfo.value.code == "VALIDATION_FAILED"
     assert excinfo.value.field_errors == failures
+    assert [entry["field"] for entry in excinfo.value.field_errors] == ["trackingId", "source"]
     assert excinfo.value.data["failedValidations"] == failures
 
 
@@ -242,5 +255,5 @@ def test_bad_request_without_failed_validations_has_no_field_errors(mocked_api):
     with pytest.raises(siren.BadRequestError) as excinfo:
         _no_retry_client().api_keys.create(label="x", scopes=["programs:read"])
 
-    assert excinfo.value.field_errors == {}
+    assert excinfo.value.field_errors == []
     assert excinfo.value.data == {"field": "scopes", "scope": "programs:read"}

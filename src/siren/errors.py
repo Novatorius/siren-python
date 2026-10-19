@@ -9,7 +9,7 @@ machine-readable ``error.code`` when present), ``status_code``, and ``data``
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 
 class SirenError(Exception):
@@ -37,11 +37,10 @@ class SirenError(Exception):
 
 
 def _field_errors(data: Any) -> Dict[str, Any]:
-    """Per-field messages from an error payload.
+    """Per-field errors from a 422 error payload.
 
-    Siren's REST layer refuses a request that fails validation with a 400 and
-    ``error.context = {"type": "VALIDATION_FAILED", "failedValidations":
-    {field: [messages]}}``. Any other object payload is returned as is.
+    A ``failedValidations`` object is returned as is. Any other object
+    payload is returned whole.
     """
     if not isinstance(data, dict):
         return {}
@@ -54,15 +53,27 @@ def _field_errors(data: Any) -> Dict[str, Any]:
 class BadRequestError(SirenError):
     """400 — the request was malformed or failed validation.
 
-    Siren answers a failed field check with 400. ``field_errors`` maps each
-    field that failed to its messages, and ``code`` is ``VALIDATION_FAILED``.
+    Siren answers a failed field check with 400, ``code`` set to
+    ``VALIDATION_FAILED``, and ``error.context.failedValidations`` holding one
+    entry per broken rule: ``{"field", "message", "type", "context"}``, such as
+    ``{"field": "total", "message": "total is required.", "type": "REQUIRED"}``.
+    ``field_errors`` returns those entries, in Siren's order.
     """
 
     @property
-    def field_errors(self) -> Dict[str, Any]:
-        if isinstance(self.data, dict) and isinstance(self.data.get("failedValidations"), dict):
-            return self.data["failedValidations"]
-        return {}
+    def field_errors(self) -> List[Dict[str, Any]]:
+        if not isinstance(self.data, dict):
+            return []
+        failed = self.data.get("failedValidations")
+        if not isinstance(failed, list):
+            return []
+        return [
+            entry
+            for entry in failed
+            if isinstance(entry, dict)
+            and isinstance(entry.get("field"), str)
+            and isinstance(entry.get("message"), str)
+        ]
 
 
 class AuthenticationError(SirenError):
