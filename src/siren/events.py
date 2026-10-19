@@ -14,17 +14,19 @@ def _normalize_line_item(item: Mapping[str, Any]) -> Dict[str, Any]:
     """Map a line item to the wire format (camelCase, ``quantity`` defaulting to 1).
 
     Accepts snake_case (``external_id``) or camelCase (``externalId``) keys so
-    both idioms work; the JSON on the wire is always camelCase.
+    both idioms work; the JSON on the wire is always camelCase. Siren needs
+    only ``amount``. ``name`` and ``external_id`` are sent when given.
     """
-    missing = [key for key in ("name", "amount") if key not in item]
-    if missing:
-        raise ValueError(f"line item is missing required field(s): {', '.join(missing)}")
+    if "amount" not in item:
+        raise ValueError("line item is missing required field(s): amount")
 
     normalized: Dict[str, Any] = {}
     external_id = item.get("external_id", item.get("externalId"))
     if external_id is not None:
         normalized["externalId"] = external_id
-    normalized["name"] = item["name"]
+    name = item.get("name")
+    if name is not None:
+        normalized["name"] = name
     quantity = item.get("quantity")
     normalized["quantity"] = 1 if quantity is None else int(quantity)
     normalized["amount"] = item["amount"]
@@ -41,7 +43,7 @@ class Events:
         self,
         *,
         source: str,
-        external_id: str,
+        external_id: Union[str, int],
         total: Number,
         tracking_id: int,
         currency: Optional[str] = None,
@@ -53,6 +55,10 @@ class Events:
         (``9.99`` means $9.99). Reward pools compute ``amount x quantity`` per
         line, so ``quantity`` must be honest; a missing ``quantity`` defaults
         to ``1``. Omit ``items`` to treat ``total`` as a single line.
+
+        ``external_id`` may be a number, which Siren stores as text. Each line
+        item needs ``amount``, and ``name``, ``external_id`` and ``quantity``
+        are optional.
 
         ``currency`` must be a currency the organization uses. Without it the
         lines carry no currency and read as the organization's default.
@@ -73,7 +79,7 @@ class Events:
             payload["items"] = [_normalize_line_item(item) for item in items]
         return self._post("sale", payload)
 
-    def refund(self, *, source: str, external_id: str) -> EventResult:
+    def refund(self, *, source: str, external_id: Union[str, int]) -> EventResult:
         """Reverse a previously recorded sale (``POST /event/refund``).
 
         The sale is matched by ``(external_id, source)``; both must match the

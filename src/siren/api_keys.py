@@ -21,8 +21,8 @@ class ApiKeys:
     def create(
         self,
         *,
-        label: str,
         scopes: Sequence[str],
+        label: Optional[str] = None,
         expires_at: Optional[str] = None,
         property_id: Optional[int] = None,
     ) -> ApiKey:
@@ -38,7 +38,8 @@ class ApiKeys:
         ``event:{slug}`` for one event type. ``*`` is also accepted. A
         resource scope such as ``programs:read`` is refused with a 400.
 
-        ``expires_at`` is an ISO 8601 time in the future when the key stops
+        ``label`` is an optional name for the key, and is left out of the
+        request when not given. ``expires_at`` is an ISO 8601 time in the future when the key stops
         working. ``property_id`` ties the key to one of the organization's
         Properties.
         """
@@ -46,7 +47,9 @@ class ApiKeys:
             raise ValueError(
                 "scopes is required: pass event scopes such as ['event:*'] or ['event:sale']"
             )
-        payload: Dict[str, object] = {"label": label, "scopes": list(scopes)}
+        payload: Dict[str, object] = {"scopes": list(scopes)}
+        if label is not None:
+            payload["label"] = label
         if expires_at is not None:
             payload["expiresAt"] = expires_at
         if property_id is not None:

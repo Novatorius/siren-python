@@ -95,6 +95,21 @@ class TestSale:
                 items=[{"name": "No price"}],
             )
 
+    def test_line_item_needs_only_amount(self, client, mocked_api):
+        # SaleEventFactory::checkItem requires amount alone.
+        route = mocked_api.post("/event/sale").respond(200)
+
+        client.events.sale(
+            source="stripe",
+            external_id=1001,
+            total=10.0,
+            tracking_id=3,
+            items=[{"amount": 10}],
+        )
+
+        assert _body(route)["externalId"] == 1001
+        assert _body(route)["items"] == [{"quantity": 1, "amount": 10}]
+
     def test_items_omitted_from_payload_when_not_given(self, client, mocked_api):
         route = mocked_api.post("/event/sale").respond(200)
 

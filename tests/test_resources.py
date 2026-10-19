@@ -40,6 +40,16 @@ class TestApiKeys:
         assert key.created_at == "2026-10-19T00:00:00+00:00"
         assert key.revoked_at is None
 
+
+    def test_create_without_label_omits_it(self, client, mocked_api):
+        # CreateApiKey reads label as optional and stores an empty one.
+        route = mocked_api.post("/api-keys").respond(
+            201, json={"id": 2, "keyPrefix": "sk_live_bbbb", "label": "", "rawKey": "sk_live_x"}
+        )
+
+        client.api_keys.create(scopes=["event:sale"])
+
+        assert json.loads(route.calls.last.request.content) == {"scopes": ["event:sale"]}
     def test_create_sends_expiry_and_property(self, client, mocked_api):
         route = mocked_api.post("/api-keys").respond(201, json={"id": 5})
 
