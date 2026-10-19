@@ -112,6 +112,10 @@ class Webhooks:
     :meth:`construct_event` as ``event_type``. A subscription that belongs to
     a connected site gets a versioned envelope instead, with ``type``,
     ``id`` and ``data`` in the body, and :meth:`construct_event` reads those.
+    Siren sends both with the same headers. The envelope's ``id`` is the
+    ``X-Siren-Delivery`` value and its ``type`` is the ``X-Siren-Event``
+    value, and that match is how :meth:`construct_event` tells an envelope
+    from a payload that has ``version``, ``type`` and ``data`` keys of its own.
     """
 
     def __init__(self, client: HttpClient) -> None:
@@ -172,6 +176,10 @@ class Webhooks:
         For a plain subscription the whole body becomes ``event.data`` and
         ``event.type`` comes from ``event_type``. For a connected site's
         versioned envelope, ``type``, ``data`` and ``id`` come from the body.
+        When either header is passed, a body counts as an envelope only when
+        its ``id`` equals ``delivery_id`` and its ``type`` equals
+        ``event_type``. Called with neither header, a body shaped like an
+        envelope is read as one.
         Raises :class:`SignatureVerificationError` when the signature is
         missing or does not match, when the body is not a JSON object, and
         when a plain subscription's delivery arrives without ``event_type``.
@@ -196,12 +204,14 @@ class Webhooks:
         if not isinstance(payload, dict):
             raise SignatureVerificationError("Webhook payload must be a JSON object.")
 
-        if _is_envelope(payload):
-            envelope_id = payload.get("id")
+        event_type = event_type.strip() if event_type and event_type.strip() else None
+        delivery_id = delivery_id.strip() if delivery_id and delivery_id.strip() else None
+
+        if _is_envelope(payload, event_type, delivery_id):
             return WebhookEvent(
                 type=payload["type"],
                 data=payload["data"],
-                delivery_id=envelope_id if isinstance(envelope_id, str) else delivery_id,
+                delivery_id=payload["id"],
                 raw=payload,
             )
 
@@ -209,7 +219,7 @@ class Webhooks:
         # X-Siren-Event header there is no type to dispatch on, so refuse the
         # delivery loudly rather than hand back an event with an empty type
         # that matches no handler. Code written for 0.1.0 passes no headers.
-        if not event_type or not event_type.strip():
+        if event_type is None:
             raise SignatureVerificationError(
                 "Siren names a delivery's event in the X-Siren-Event header, and this body "
                 "does not carry it. Pass the header as event_type (and X-Siren-Delivery as "
@@ -217,22 +227,44 @@ class Webhooks:
             )
 
         return WebhookEvent(
-            type=event_type.strip(),
+            type=event_type,
             data=payload,
             delivery_id=delivery_id,
             raw=payload,
         )
 
 
-def _is_envelope(payload: dict) -> bool:
+def _is_envelope(
+    payload: dict, event_type: Optional[str], delivery_id: Optional[str]
+) -> bool:
     """Whether a body is the versioned envelope a connected site's subscription gets.
 
-    A plain subscription's body is the payload alone, and some payloads have
-    a ``type`` key of their own (``currency.created`` does), so the envelope
-    is known by its ``version`` beside a string ``type`` and an object ``data``.
+    Siren sends an envelope and a plain payload with the same headers, and a
+    plain payload, such as a custom event's, may have ``version``, ``type``
+    and ``data`` keys of its own. Only an envelope carries its own delivery
+    id: Siren writes the ``X-Siren-Delivery`` value into the envelope's
+    ``id`` and the ``X-Siren-Event`` value into its ``type``. So when the
+    caller passes either header, the body must match them. Without either
+    header the shape alone decides.
     """
-    return (
-        "version" in payload
-        and isinstance(payload.get("type"), str)
+    version = payload.get("version")
+    envelope_id = payload.get("id")
+    envelope_type = payload.get("type")
+    shaped = (
+        isinstance(version, int)
+        and not isinstance(version, bool)
+        and isinstance(envelope_id, str)
+        and envelope_id != ""
+        and isinstance(envelope_type, str)
+        and envelope_type != ""
         and isinstance(payload.get("data"), dict)
+    )
+    if not shaped:
+        return False
+    if event_type is None and delivery_id is None:
+        return True
+    return (
+        delivery_id is not None
+        and envelope_id == delivery_id
+        and (event_type is None or envelope_type == event_type)
     )

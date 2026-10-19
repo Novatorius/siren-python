@@ -155,6 +155,62 @@ class TestConstructEvent:
         assert event.delivery_id == "evt_feed"
         assert event.raw["propertyId"] == 4
 
+    def test_custom_payload_shaped_like_an_envelope_is_not_unwrapped(self, client):
+        # A custom event's payload is whatever the sender posted, so it can
+        # look like an envelope. Delivered to an ordinary subscription, its
+        # `id` is not the delivery id in X-Siren-Delivery, so the whole body
+        # stays the data and the header names the event.
+        payload = {
+            "version": 2,
+            "id": "order-81",
+            "type": "subscription",
+            "data": {"plan": "pro"},
+        }
+        body = json.dumps(payload).encode()
+
+        event = client.webhooks.construct_event(
+            body, sign(body), SECRET, event_type="plan.renewed", delivery_id="evt_0f3a"
+        )
+
+        assert event.type == "plan.renewed"
+        assert event.data == payload
+        assert event.delivery_id == "evt_0f3a"
+
+    def test_version_type_data_payload_is_not_unwrapped(self, client):
+        payload = {"version": 1, "type": "refund", "data": {"orderId": 9}}
+        body = json.dumps(payload).encode()
+
+        event = client.webhooks.construct_event(
+            body, sign(body), SECRET, event_type="order.synced", delivery_id="evt_77"
+        )
+
+        assert event.type == "order.synced"
+        assert event.data == payload
+
+    def test_envelope_shape_without_delivery_header_is_not_unwrapped(self, client):
+        # With X-Siren-Event and no X-Siren-Delivery there is no delivery id
+        # to match, so even an envelope-shaped body stays whole.
+        payload = {"version": 1, "id": "evt_1", "type": "sale.created", "data": {"transactionId": 1}}
+        body = json.dumps(payload).encode()
+
+        event = client.webhooks.construct_event(
+            body, sign(body), SECRET, event_type="sale.created"
+        )
+
+        assert event.data == payload
+        assert event.delivery_id is None
+
+    def test_envelope_whose_type_differs_from_header_is_not_unwrapped(self, client):
+        payload = {"version": 1, "id": "evt_5", "type": "refund", "data": {"orderId": 9}}
+        body = json.dumps(payload).encode()
+
+        event = client.webhooks.construct_event(
+            body, sign(body), SECRET, event_type="order.synced", delivery_id="evt_5"
+        )
+
+        assert event.type == "order.synced"
+        assert event.data == payload
+
     def test_missing_signature_raises(self, client):
         with pytest.raises(siren.SignatureVerificationError):
             client.webhooks.construct_event(RAW_BODY, None, SECRET)

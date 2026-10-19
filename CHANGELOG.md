@@ -35,10 +35,12 @@ existing callers. Each one follows a rule Siren already enforces.
 - `webhooks.construct_event` takes `event_type` and `delivery_id`, from the
   `X-Siren-Event` and `X-Siren-Delivery` headers. A plain subscription's body
   is the event payload alone, which now becomes `event.data`. A connected
-  site's versioned envelope is unwrapped. The SDK used to look for `type`,
-  `data` and `deliveryId` in the body, which Siren never sends, so real
-  deliveries parsed with an empty type and empty data. `WebhookEvent` gains
-  `raw`.
+  site's versioned envelope is unwrapped when its `id` and `type` match the
+  two headers, or when neither header is passed, so a custom event's
+  payload that holds `version`, `type` and `data` keys stays whole. The SDK
+  used to look for `type`, `data` and `deliveryId` in the body, which Siren
+  never sends, so real deliveries parsed with an empty type and empty data.
+  `WebhookEvent` gains `raw`.
 - Errors read `error.context` as `data` when the body has no `data`, and use
   its `type` as `code` when there is no `code`. A failed field check, which
   Siren answers with 400, now exposes its broken rules on
