@@ -7,8 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-The next release is 0.2.0, a minor bump, because the changes below break
-existing callers. Each one follows a rule Siren already enforces.
+## [0.2.0] - 2026-10-19
+
+This is a minor bump, because the changes below break existing callers. Each
+one follows a rule Siren already enforces.
 
 ### Breaking
 
@@ -130,5 +132,6 @@ existing callers. Each one follows a rule Siren already enforces.
 - Typed error hierarchy rooted at `SirenError`.
 - Ships `py.typed` for full type-checker support.
 
-[Unreleased]: https://github.com/Novatorius/siren-python/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/Novatorius/siren-python/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/Novatorius/siren-python/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/Novatorius/siren-python/releases/tag/v0.1.0

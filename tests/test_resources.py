@@ -269,4 +269,4 @@ class TestPublicSurface:
             assert hasattr(getattr(client, reader), "list")
 
     def test_version(self):
-        assert siren.__version__ == "0.1.0"
+        assert siren.__version__ == "0.2.0"

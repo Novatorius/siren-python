@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Siren Affiliate Platform API
-  version: 0.1.0
+  version: 0.2.0
   summary: Headless affiliate & incentive tracking API for the Siren SaaS.
   description: |
     The Siren API lets any commerce stack record sales, refunds, and referred
