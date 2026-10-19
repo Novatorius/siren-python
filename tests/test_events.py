@@ -232,3 +232,17 @@ class TestEventOutcome:
         assert result.body == {}
         assert result.status is None
         assert result.queued is False
+
+
+class TestQueuedVisitOpportunity:
+    def test_opportunity_id_falls_back_to_body(self, client, mocked_api):
+        # IngestEvent's queued visit names the reserved opportunity in the
+        # body. Match the Node SDK and read it there when no header came back.
+        mocked_api.post("/event/site-visited").respond(
+            202, json={"status": "queued", "queued": True, "opportunityId": 81}
+        )
+
+        result = client.events.site_visited(collaborator_id=5)
+
+        assert result.opportunity_id == 81
+        assert result.queued is True

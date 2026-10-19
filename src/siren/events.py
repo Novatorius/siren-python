@@ -118,8 +118,16 @@ class Events:
             except ValueError:
                 opportunity_id = None
         body = parse_json(response)
+        if not isinstance(body, dict):
+            body = {}
+        # A site visit, queued or live, also names its opportunity in the body.
+        body_opportunity = body.get("opportunityId")
+        if opportunity_id is None and isinstance(body_opportunity, int) and not isinstance(
+            body_opportunity, bool
+        ):
+            opportunity_id = body_opportunity
         return EventResult(
             opportunity_id=opportunity_id,
             http_status=response.status_code,
-            body=body if isinstance(body, dict) else {},
+            body=body,
         )

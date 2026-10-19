@@ -59,7 +59,8 @@ class WebhookEventType(str, Enum):
 class EventResult:
     """Result of an event ingestion call.
 
-    ``opportunity_id`` is read from the ``X-Siren-OID`` response header. It is
+    ``opportunity_id`` is read from the ``X-Siren-OID`` response header, or
+    from the body's ``opportunityId`` when the header is missing. It is
     ``None`` when the server did not associate the event with an opportunity.
 
     ``http_status`` is the response status and ``body`` the JSON object Siren

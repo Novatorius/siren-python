@@ -18,7 +18,14 @@ class ApiKeys:
     def __init__(self, client: HttpClient) -> None:
         self._client = client
 
-    def create(self, *, label: str, scopes: Sequence[str]) -> ApiKey:
+    def create(
+        self,
+        *,
+        label: str,
+        scopes: Sequence[str],
+        expires_at: Optional[str] = None,
+        property_id: Optional[int] = None,
+    ) -> ApiKey:
         """Create an API key (``POST /api-keys``). Never auto-retried.
 
         The returned key's ``raw_key`` (the plaintext ``sk_live_...``
@@ -30,12 +37,20 @@ class ApiKeys:
         ``event:*`` for every event Siren takes with a wildcard, or
         ``event:{slug}`` for one event type. ``*`` is also accepted. A
         resource scope such as ``programs:read`` is refused with a 400.
+
+        ``expires_at`` is an ISO 8601 time in the future when the key stops
+        working. ``property_id`` ties the key to one of the organization's
+        Properties.
         """
         if isinstance(scopes, str) or not scopes:
             raise ValueError(
                 "scopes is required: pass event scopes such as ['event:*'] or ['event:sale']"
             )
         payload: Dict[str, object] = {"label": label, "scopes": list(scopes)}
+        if expires_at is not None:
+            payload["expiresAt"] = expires_at
+        if property_id is not None:
+            payload["propertyId"] = property_id
         response = self._client.request(
             "POST", "/api-keys", json=payload, retryable=False
         )

@@ -39,7 +39,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `EventResult.http_status`, `EventResult.body`, `EventResult.status` and
   `EventResult.queued`. Siren answers a sale and a site visit with what came
   of them, and answers `202` with `status: queued` while an organization's
-  processing is paused.
+  processing is paused. When a response has no `X-Siren-OID` header,
+  `opportunity_id` is read from the body's `opportunityId`.
+- `api_keys.create` takes `expires_at` and `property_id`.
 - `WebhookEventType` members for `collaborator.updated`,
   `collaborator.deactivated`, `program.created`, `credit.issued`,
   `credit.redeemed`, `currency.created` and `currency.deleted`, matching the

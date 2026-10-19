@@ -40,6 +40,23 @@ class TestApiKeys:
         assert key.created_at == "2026-10-19T00:00:00+00:00"
         assert key.revoked_at is None
 
+    def test_create_sends_expiry_and_property(self, client, mocked_api):
+        route = mocked_api.post("/api-keys").respond(201, json={"id": 5})
+
+        client.api_keys.create(
+            label="Store",
+            scopes=["event:sale"],
+            expires_at="2027-01-01T00:00:00Z",
+            property_id=4,
+        )
+
+        assert json.loads(route.calls.last.request.content) == {
+            "label": "Store",
+            "scopes": ["event:sale"],
+            "expiresAt": "2027-01-01T00:00:00Z",
+            "propertyId": 4,
+        }
+
     @pytest.mark.parametrize("scopes", [None, [], "event:*"])
     def test_create_requires_scopes(self, client, mocked_api, scopes):
         # Siren's CreateApiKey answers 400 "At least one scope is required."
