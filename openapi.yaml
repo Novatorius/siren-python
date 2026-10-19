@@ -14,10 +14,12 @@ info:
 
     Every request carries a bearer token. An API key
     (`Authorization: Bearer sk_live_...`) sends events and does nothing else,
-    so on Siren Cloud only the `/event/...` routes accept it. The webhook,
-    API key and reconciliation routes need a signed-in dashboard session's
-    token, and the reconciliation routes also take a connected site's OAuth
-    token that holds `connect:records:read`. Any other credential gets a 401.
+    so on Siren Cloud only the `/event/...` routes and `GET /ping` accept it.
+    The webhook, API key and reconciliation routes need a signed-in dashboard
+    session's token, and the reconciliation routes also take a connected
+    site's OAuth token that holds `connect:records:read`. Any other
+    credential gets a 401. Each operation lists the credentials it takes in
+    its `security`.
 
     Success bodies are not wrapped. A record is a bare object. The webhook
     and API key lists are bare arrays, and the reconciliation lists are
@@ -37,7 +39,7 @@ servers:
   - url: http://localhost:8080/siren/v1
     description: Local development
 security:
-  - apiKey: []
+  - dashboardSession: []
 tags:
   - name: Events
     description: Ingest commerce and tracking events.
@@ -54,7 +56,9 @@ tags:
       gets a versioned envelope instead:
       `{version, id, type, kind, occurredAt, propertyId, match,
       originPropertyId, data, records, recordDetail, omittedRecords,
-      recordsTruncated}`.
+      recordsTruncated}`. Both kinds carry the same headers. An envelope's
+      `id` is the `X-Siren-Delivery` value and its `type` is the
+      `X-Siren-Event` value, which a plain payload's own fields never match.
   - name: API Keys
     description: Manage API keys.
   - name: Reconciliation
@@ -71,6 +75,9 @@ paths:
         `items` are supplied, reward pools compute `amount × quantity` per line;
         otherwise `total` is treated as one line. The opportunity id is returned
         in the `X-Siren-OID` response header.
+      security:
+        - apiKey: []
+        - dashboardSession: []
       requestBody:
         required: true
         content:
@@ -107,6 +114,9 @@ paths:
         Returns 404 if no matching sale transaction exists. While the
         organization's processing is paused the refund is queued (202) and the
         sale is looked up when the queue replays.
+      security:
+        - apiKey: []
+        - dashboardSession: []
       requestBody:
         required: true
         content:
@@ -133,6 +143,10 @@ paths:
         given collaborator. A visit for a collaborator that does not exist or
         is not active writes nothing and answers `not_attributed` with a
         `reason`.
+      security:
+        - apiKey: []
+        - connectorToken: []
+        - dashboardSession: []
       requestBody:
         required: true
         content:
@@ -171,6 +185,10 @@ paths:
         by single hyphens. An unknown slug answers 404. The slugs a connected
         site forwards, such as `sale-triggered`, need that exact
         `event:{slug}` scope, and `event:*` does not reach them.
+      security:
+        - apiKey: []
+        - connectorToken: []
+        - dashboardSession: []
       parameters:
         - name: eventSlug
           in: path
@@ -195,11 +213,42 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '429': { $ref: '#/components/responses/RateLimited' }
+  /ping:
+    get:
+      tags: [Events]
+      operationId: ping
+      summary: Check a credential
+      description: |
+        Answers with the organization the credential belongs to, so a sender
+        can check its API key before it sends events.
+      security:
+        - apiKey: []
+        - connectorToken: []
+        - dashboardSession: []
+      responses:
+        '200':
+          description: The credential works.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, org]
+                properties:
+                  ok: { type: boolean, const: true }
+                  org:
+                    type: object
+                    properties:
+                      id: { type: integer }
+                      name: { type: string }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
   /webhooks:
     get:
       tags: [Webhooks]
       operationId: listWebhookSubscriptions
       summary: List webhook subscriptions
+      security:
+        - dashboardSession: []
       parameters:
         - { $ref: '#/components/parameters/Number200' }
         - { $ref: '#/components/parameters/Offset' }
@@ -226,6 +275,8 @@ paths:
         `events` is stored as given and is not checked against the catalog,
         so a name Siren does not send is accepted and never delivered. An
         organization holds at most 100 subscriptions.
+      security:
+        - dashboardSession: []
       requestBody:
         required: true
         content:
@@ -255,6 +306,8 @@ paths:
       description: |
         The catalog the dashboard's event picker is built from. It names
         exactly the event types Siren sends.
+      security:
+        - dashboardSession: []
       responses:
         '200':
           description: Event types (bare array).
@@ -269,6 +322,8 @@ paths:
       tags: [Webhooks]
       operationId: getWebhookSubscription
       summary: Get a webhook subscription
+      security:
+        - dashboardSession: []
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
       responses:
@@ -283,6 +338,8 @@ paths:
       tags: [Webhooks]
       operationId: deleteWebhookSubscription
       summary: Delete a webhook subscription
+      security:
+        - dashboardSession: []
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
       responses:
@@ -302,6 +359,8 @@ paths:
       operationId: listApiKeys
       summary: List API keys
       description: Organization admins only. Revoked keys are listed too.
+      security:
+        - dashboardSession: []
       parameters:
         - { $ref: '#/components/parameters/Number200' }
         - { $ref: '#/components/parameters/Offset' }
@@ -326,6 +385,8 @@ paths:
         later. A key may hold event scopes only (`event:*` or
         `event:{slug}`), or `*`. A resource scope such as `programs:read` is
         refused with a 400. An organization holds at most 250 active keys.
+      security:
+        - dashboardSession: []
       requestBody:
         required: true
         content:
@@ -352,6 +413,8 @@ paths:
       tags: [API Keys]
       operationId: revokeApiKey
       summary: Revoke an API key
+      security:
+        - dashboardSession: []
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
       responses:
@@ -367,6 +430,9 @@ paths:
       tags: [Reconciliation]
       operationId: listConversions
       summary: List conversions
+      security:
+        - dashboardSession: []
+        - connectorToken: []
       parameters:
         - { $ref: '#/components/parameters/Number' }
         - { $ref: '#/components/parameters/Offset' }
@@ -378,6 +444,9 @@ paths:
       tags: [Reconciliation]
       operationId: listTransactions
       summary: List transactions
+      security:
+        - dashboardSession: []
+        - connectorToken: []
       parameters:
         - { $ref: '#/components/parameters/Number' }
         - { $ref: '#/components/parameters/Offset' }
@@ -389,6 +458,9 @@ paths:
       tags: [Reconciliation]
       operationId: listObligations
       summary: List obligations
+      security:
+        - dashboardSession: []
+        - connectorToken: []
       parameters:
         - { $ref: '#/components/parameters/Number' }
         - { $ref: '#/components/parameters/Offset' }
@@ -400,6 +472,9 @@ paths:
       tags: [Reconciliation]
       operationId: listPayouts
       summary: List payouts
+      security:
+        - dashboardSession: []
+        - connectorToken: []
       parameters:
         - { $ref: '#/components/parameters/Number' }
         - { $ref: '#/components/parameters/Offset' }
@@ -412,7 +487,25 @@ components:
       type: http
       scheme: bearer
       bearerFormat: sk_live_...
-      description: An API key minted in the Siren dashboard or via createApiKey.
+      description: |
+        An API key minted in the Siren dashboard or via createApiKey. It sends
+        events and is refused on every other route.
+    dashboardSession:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        The access token of a person signed in to the Siren dashboard. Some
+        routes need the admin role, and refuse other roles with a 403 whose
+        code is `admin_required`.
+    connectorToken:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: |
+        A connected site's OAuth access token, issued when an organization
+        admin approves the site. The reconciliation routes take it when it
+        holds `connect:records:read`.
   headers:
     XSirenOID:
       description: The opportunity (tracking) id associated with the event.
@@ -425,12 +518,12 @@ components:
       name: number
       in: query
       description: Page size. A value above 200 is lowered to 200. Below 1 is refused with a 400.
-      schema: { type: integer, minimum: 1, maximum: 200, default: 10 }
+      schema: { type: integer, minimum: 1, default: 10 }
     Number200:
       name: number
       in: query
       description: Page size. A value above 200 is lowered to 200. Below 1 is refused with a 400.
-      schema: { type: integer, minimum: 1, maximum: 200, default: 200 }
+      schema: { type: integer, minimum: 1, default: 200 }
     Offset:
       name: offset
       in: query
@@ -448,10 +541,12 @@ components:
           maxLength: 249
           example: stripe
         externalId:
-          type: string
-          description: Your order/transaction id; used to match refunds later. A number is accepted too.
+          type: [string, number]
           minLength: 1
           maxLength: 32
+          description: |
+            Your order or transaction id, used to match refunds later. Siren
+            also takes a number and stores it as text.
           example: cs_test_a1b2c3
         total:
           type: number
@@ -480,8 +575,8 @@ components:
       type: object
       required: [amount]
       properties:
-        externalId: { type: string, maxLength: 255 }
-        name: { type: string, maxLength: 255, example: Pro Plan (annual) }
+        externalId: { type: [string, number], maxLength: 255, description: 'Text, or a number that Siren stores as text.' }
+        name: { type: [string, number], maxLength: 255, description: 'Text, or a number that Siren stores as text.', example: Pro Plan (annual) }
         quantity: { type: integer, minimum: 1, maximum: 1000000, default: 1 }
         amount:
           type: number
@@ -494,7 +589,7 @@ components:
       required: [source, externalId]
       properties:
         source: { type: string, minLength: 1, maxLength: 249, example: stripe }
-        externalId: { type: string, minLength: 1, maxLength: 32, example: cs_test_a1b2c3 }
+        externalId: { type: [string, number], minLength: 1, maxLength: 32, example: cs_test_a1b2c3 }
     SiteVisitedPayload:
       type: object
       required: [collaboratorId]

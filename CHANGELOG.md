@@ -52,6 +52,16 @@ existing callers. Each one follows a rule Siren already enforces.
   `dateCreated`. Both gain `property_id`, and `ApiKey` gains `revoked_at`.
 - `api_keys.list` and `webhooks.subscriptions.list` take `number` and
   `offset`, because Siren returns at most 200 rows a request.
+- `api_keys.create` takes `label` as optional and leaves it out of the
+  request when not given, as Siren allows.
+- `events.sale` sends a line item that has only `amount`. It used to raise
+  `ValueError` without `name`, which Siren does not need. `external_id`
+  may be a number, which Siren stores as text.
+- `openapi.yaml` lists the credentials each operation takes, so the webhook,
+  API key and reconciliation routes ask for a dashboard session and not an
+  API key. It adds `GET /ping`, drops the page size maximum that Siren
+  lowers rather than refuses, and types `externalId` as a string or a
+  number.
 
 ### Added
 
