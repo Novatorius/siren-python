@@ -12,11 +12,7 @@ import siren
 from siren.webhooks import Webhooks
 
 SECRET = "whsec_test_secret"
-PAYLOAD = {
-    "type": "conversion.approved",
-    "data": {"id": 991, "amount": 12.5},
-    "deliveryId": "dlv_01H",
-}
+PAYLOAD = {"conversionId": 991, "amount": 12.5}
 RAW_BODY = json.dumps(PAYLOAD).encode("utf-8")
 
 
@@ -57,13 +53,163 @@ class TestVerifySignature:
 
 
 class TestConstructEvent:
-    def test_returns_parsed_event(self, client):
-        event = client.webhooks.construct_event(RAW_BODY, sign(RAW_BODY), SECRET)
+    def test_plain_subscription_body_is_the_payload(self, client):
+        # Siren's WebhookDeliveryService sends a subscription with no Property
+        # (every subscription made through POST /webhooks) the event payload
+        # alone, and the event type only in X-Siren-Event. The SDK used to
+        # read `type`, `data` and `deliveryId` from the body, which Siren
+        # never sends, so every real delivery parsed with an empty type and
+        # empty data.
+        body = json.dumps({"conversionId": 991}).encode()
+
+        event = client.webhooks.construct_event(
+            body,
+            sign(body),
+            SECRET,
+            event_type="conversion.approved",
+            delivery_id="evt_0123abcd",
+        )
 
         assert isinstance(event, siren.WebhookEvent)
         assert event.type == "conversion.approved"
-        assert event.data == {"id": 991, "amount": 12.5}
-        assert event.delivery_id == "dlv_01H"
+        assert event.data == {"conversionId": 991}
+        assert event.delivery_id == "evt_0123abcd"
+        assert event.raw == {"conversionId": 991}
+
+    def test_plain_payload_with_its_own_type_key_stays_data(self, client):
+        # currency.created's payload carries a `type` field of its own.
+        body = json.dumps(
+            {"code": "PTS", "name": "Points", "type": "points", "exchangeRate": 0.01}
+        ).encode()
+
+        event = client.webhooks.construct_event(
+            body, sign(body), SECRET, event_type="currency.created"
+        )
+
+        assert event.type == "currency.created"
+        assert event.data["type"] == "points"
+
+    def test_plain_body_without_event_header_raises(self, client):
+        # A 0.1.0 caller passes no headers. A plain subscription's body names
+        # no event, so the SDK refuses it instead of returning an event with
+        # an empty type that no handler matches.
+        body = json.dumps({"payoutId": 7}).encode()
+
+        with pytest.raises(siren.SignatureVerificationError, match="X-Siren-Event"):
+            client.webhooks.construct_event(body, sign(body), SECRET)
+
+        with pytest.raises(siren.SignatureVerificationError, match="X-Siren-Event"):
+            client.webhooks.construct_event(body, sign(body), SECRET, event_type="  ")
+
+    def test_payload_type_key_is_never_the_event_type(self, client):
+        # currency.created's payload has its own `type`. Without the header it
+        # must not be taken for the event type.
+        body = json.dumps({"code": "PTS", "type": "points"}).encode()
+
+        with pytest.raises(siren.SignatureVerificationError):
+            client.webhooks.construct_event(body, sign(body), SECRET)
+
+    def test_envelope_needs_no_headers(self, client):
+        envelope = {
+            "version": 1,
+            "id": "evt_feed",
+            "type": "webhook.test",
+            "kind": "test",
+            "data": {"nonce": "abc"},
+            "records": {},
+        }
+        body = json.dumps(envelope).encode()
+
+        event = client.webhooks.construct_event(body, sign(body), SECRET)
+
+        assert event.type == "webhook.test"
+        assert event.delivery_id == "evt_feed"
+        assert event.data == {"nonce": "abc"}
+
+    def test_connected_site_envelope_is_unwrapped(self, client):
+        # A Property-bound subscription gets WebhookDeliveryService's
+        # versioned envelope, with the type, id and payload in the body.
+        envelope = {
+            "version": 1,
+            "id": "evt_feed",
+            "type": "payout.paid",
+            "kind": "engine",
+            "occurredAt": "2026-10-19T00:00:00+00:00",
+            "propertyId": 4,
+            "match": "org",
+            "originPropertyId": None,
+            "data": {"payoutId": 7, "collaboratorId": 3, "value": 1000, "currency": "USD"},
+            "records": {},
+            "recordDetail": "ids",
+            "omittedRecords": [],
+            "recordsTruncated": False,
+        }
+        body = json.dumps(envelope).encode()
+
+        event = client.webhooks.construct_event(
+            body, sign(body), SECRET, event_type="payout.paid", delivery_id="evt_feed"
+        )
+
+        assert event.type == "payout.paid"
+        assert event.data == envelope["data"]
+        assert event.delivery_id == "evt_feed"
+        assert event.raw["propertyId"] == 4
+
+    def test_custom_payload_shaped_like_an_envelope_is_not_unwrapped(self, client):
+        # A custom event's payload is whatever the sender posted, so it can
+        # look like an envelope. Delivered to an ordinary subscription, its
+        # `id` is not the delivery id in X-Siren-Delivery, so the whole body
+        # stays the data and the header names the event.
+        payload = {
+            "version": 2,
+            "id": "order-81",
+            "type": "subscription",
+            "data": {"plan": "pro"},
+        }
+        body = json.dumps(payload).encode()
+
+        event = client.webhooks.construct_event(
+            body, sign(body), SECRET, event_type="plan.renewed", delivery_id="evt_0f3a"
+        )
+
+        assert event.type == "plan.renewed"
+        assert event.data == payload
+        assert event.delivery_id == "evt_0f3a"
+
+    def test_version_type_data_payload_is_not_unwrapped(self, client):
+        payload = {"version": 1, "type": "refund", "data": {"orderId": 9}}
+        body = json.dumps(payload).encode()
+
+        event = client.webhooks.construct_event(
+            body, sign(body), SECRET, event_type="order.synced", delivery_id="evt_77"
+        )
+
+        assert event.type == "order.synced"
+        assert event.data == payload
+
+    def test_envelope_shape_without_delivery_header_is_not_unwrapped(self, client):
+        # With X-Siren-Event and no X-Siren-Delivery there is no delivery id
+        # to match, so even an envelope-shaped body stays whole.
+        payload = {"version": 1, "id": "evt_1", "type": "sale.created", "data": {"transactionId": 1}}
+        body = json.dumps(payload).encode()
+
+        event = client.webhooks.construct_event(
+            body, sign(body), SECRET, event_type="sale.created"
+        )
+
+        assert event.data == payload
+        assert event.delivery_id is None
+
+    def test_envelope_whose_type_differs_from_header_is_not_unwrapped(self, client):
+        payload = {"version": 1, "id": "evt_5", "type": "refund", "data": {"orderId": 9}}
+        body = json.dumps(payload).encode()
+
+        event = client.webhooks.construct_event(
+            body, sign(body), SECRET, event_type="order.synced", delivery_id="evt_5"
+        )
+
+        assert event.type == "order.synced"
+        assert event.data == payload
 
     def test_missing_signature_raises(self, client):
         with pytest.raises(siren.SignatureVerificationError):
@@ -78,10 +224,10 @@ class TestConstructEvent:
         with pytest.raises(siren.SignatureVerificationError):
             client.webhooks.construct_event(RAW_BODY, sign(RAW_BODY), "whsec_other")
 
-    def test_delivery_id_optional(self, client):
-        body = json.dumps({"type": "payout.paid", "data": {}}).encode()
-        event = client.webhooks.construct_event(body, sign(body), SECRET)
-        assert event.delivery_id is None
+    def test_non_object_body_raises(self, client):
+        body = b"[1, 2]"
+        with pytest.raises(siren.SignatureVerificationError):
+            client.webhooks.construct_event(body, sign(body), SECRET)
 
 
 class TestSubscriptions:
@@ -94,7 +240,8 @@ class TestSubscriptions:
                 "events": ["conversion.approved", "payout.paid"],
                 "description": "Prod endpoint",
                 "status": "active",
-                "createdAt": "2026-07-11T00:00:00Z",
+                "propertyId": None,
+                "dateCreated": "2026-10-19T00:00:00+00:00",
                 "signingSecret": "whsec_only_once",
             },
         )
@@ -117,6 +264,8 @@ class TestSubscriptions:
         assert subscription.id == 5
         assert subscription.signing_secret == "whsec_only_once"
         assert subscription.target_url == "https://example.com/webhooks/siren"
+        # Siren's WebhookSubscriptionAdapter names the creation time dateCreated.
+        assert subscription.created_at == "2026-10-19T00:00:00+00:00"
 
     def test_create_accepts_wildcard_strings(self, client, mocked_api):
         route = mocked_api.post("/webhooks").respond(201, json={"id": 6, "events": ["*"]})
@@ -144,33 +293,51 @@ class TestSubscriptions:
         assert subscriptions[1].events == ["sale.created"]
         assert subscriptions[0].signing_secret is None
 
+    def test_list_pages_with_number_and_offset(self, client, mocked_api):
+        route = mocked_api.get("/webhooks").respond(200, json=[])
+
+        client.webhooks.subscriptions.list(number=50, offset=50)
+
+        params = route.calls.last.request.url.params
+        assert params["number"] == "50"
+        assert params["offset"] == "50"
+
     def test_delete(self, client, mocked_api):
-        route = mocked_api.delete("/webhooks/9").respond(200)
+        route = mocked_api.delete("/webhooks/9").respond(200, json={"success": True})
 
         assert client.webhooks.subscriptions.delete(9) is None
         assert route.called
 
 
 class TestWebhookEventType:
-    def test_all_27_types_plus_wildcard(self):
-        assert len(siren.WebhookEventType) == 28
+    def test_all_34_types_plus_wildcard(self):
+        assert len(siren.WebhookEventType) == 35
 
     def test_wildcard_member(self):
         assert siren.WebhookEventType.ALL == "*"
         assert siren.WebhookEventType.ALL.value == "*"
 
-    def test_catalog_matches_design(self):
+    def test_catalog_matches_siren(self):
+        # The keys of WebhookCatalog::EVENTS in Siren
+        # (lib/Webhooks/Service/Services/WebhookCatalog.php), which
+        # GET /webhooks/events serves. Siren added collaborator.updated,
+        # collaborator.deactivated, program.created, credit.issued,
+        # credit.redeemed, currency.created and currency.deleted after 0.1.0.
         expected = {
             "*",
-            "allocation.completed", "collaborator.created", "collaborator.registered",
-            "conversion.approved", "conversion.created", "conversion.rejected",
-            "conversion.renewed", "coupon.applied", "distribution.completed",
+            "allocation.completed", "collaborator.created",
+            "collaborator.deactivated", "collaborator.registered",
+            "collaborator.updated", "conversion.approved", "conversion.created",
+            "conversion.rejected", "conversion.renewed", "coupon.applied",
+            "credit.issued", "credit.redeemed", "currency.created",
+            "currency.deleted", "distribution.completed",
             "engagement.awarded", "engagement.completed", "engagement.created",
             "fulfillment.created", "fulfillment.updated", "lead.created",
             "metrics.updated", "obligation.completed", "obligation.created",
             "opportunity.created", "opportunity.invalidated", "payout.created",
-            "payout.paid", "refund.created", "renewal.created", "sale.created",
-            "transaction.completed", "transaction.created",
+            "payout.paid", "program.created", "refund.created",
+            "renewal.created", "sale.created", "transaction.completed",
+            "transaction.created",
         }
         assert {member.value for member in siren.WebhookEventType} == expected
 

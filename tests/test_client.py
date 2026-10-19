@@ -135,7 +135,7 @@ class TestRetryPolicy:
         client = siren.Siren(api_key=API_KEY, max_retries=3)
 
         with pytest.raises(siren.ApiError):
-            client.api_keys.create(label="Production server")
+            client.api_keys.create(label="Production server", scopes=["event:*"])
 
         assert route.call_count == 1
         assert no_sleep == []

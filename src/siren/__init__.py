@@ -17,17 +17,22 @@ from ._version import __version__
 from .client import Siren
 from .errors import (
     ApiError,
+    ApiKeyNotAcceptedError,
     AuthenticationError,
     BadRequestError,
     ConflictError,
     ConnectionError,
+    ErrorCode,
+    MissingScopeError,
     NotFoundError,
     PermissionError,
     RateLimitError,
     SignatureVerificationError,
     SirenError,
+    StoreKeyNotAllowedError,
     ValidationError,
 )
+from .scopes import LEDGER_READ_SCOPES, ApiKeyScope, event_scope
 from .types import (
     ApiKey,
     EventResult,
@@ -44,7 +49,11 @@ __all__ = [
     "SirenError",
     "BadRequestError",
     "AuthenticationError",
+    "ApiKeyNotAcceptedError",
     "PermissionError",
+    "MissingScopeError",
+    "StoreKeyNotAllowedError",
+    "ErrorCode",
     "NotFoundError",
     "ConflictError",
     "ValidationError",
@@ -52,6 +61,10 @@ __all__ = [
     "ApiError",
     "ConnectionError",
     "SignatureVerificationError",
+    # Scopes
+    "ApiKeyScope",
+    "LEDGER_READ_SCOPES",
+    "event_scope",
     # Types
     "ApiKey",
     "EventResult",
