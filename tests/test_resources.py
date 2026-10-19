@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 import siren
 
 
@@ -16,26 +18,40 @@ class TestApiKeys:
                 "keyPrefix": "sk_live_a1b2c3d4",
                 "label": "Production server",
                 "status": "active",
-                "scopes": ["events:write"],
-                "createdAt": "2026-07-11T00:00:00Z",
+                "propertyId": None,
+                "scopes": ["event:*"],
+                "expiresAt": None,
+                "lastUsedAt": None,
+                "revokedAt": None,
+                "dateCreated": "2026-10-19T00:00:00+00:00",
+                "dateModified": "2026-10-19T00:00:00+00:00",
                 "rawKey": "sk_live_" + "f" * 64,
             },
         )
 
-        key = client.api_keys.create(label="Production server", scopes=["events:write"])
+        key = client.api_keys.create(label="Production server", scopes=["event:*"])
 
         body = json.loads(route.calls.last.request.content)
-        assert body == {"label": "Production server", "scopes": ["events:write"]}
+        assert body == {"label": "Production server", "scopes": ["event:*"]}
         assert key.id == 3
         assert key.raw_key == "sk_live_" + "f" * 64
         assert key.key_prefix == "sk_live_a1b2c3d4"
+        # Siren's ApiKeyAdapter names the creation time dateCreated.
+        assert key.created_at == "2026-10-19T00:00:00+00:00"
+        assert key.revoked_at is None
 
-    def test_create_omits_scopes_for_full_access(self, client, mocked_api):
-        route = mocked_api.post("/api-keys").respond(201, json={"id": 4, "label": "CI"})
+    @pytest.mark.parametrize("scopes", [None, [], "event:*"])
+    def test_create_requires_scopes(self, client, mocked_api, scopes):
+        # Siren's CreateApiKey answers 400 "At least one scope is required."
+        # when scopes is missing or empty, and has done so since before this
+        # SDK's 0.1.0. The SDK used to promise that omitting scopes gave full
+        # access, which was never true, so it now refuses before sending.
+        route = mocked_api.post("/api-keys").respond(201, json={"id": 4})
 
-        client.api_keys.create(label="CI")
+        with pytest.raises((ValueError, TypeError)):
+            client.api_keys.create(label="CI", scopes=scopes)
 
-        assert json.loads(route.calls.last.request.content) == {"label": "CI"}
+        assert not route.called
 
     def test_list_returns_bare_array_and_has_no_raw_key(self, client, mocked_api):
         mocked_api.get("/api-keys").respond(
@@ -51,6 +67,17 @@ class TestApiKeys:
         assert [k.id for k in keys] == [1, 2]
         assert all(k.raw_key is None for k in keys)
 
+    def test_list_pages_with_number_and_offset(self, client, mocked_api):
+        # GET /api-keys serves at most 200 rows a request, and an org can
+        # hold 250 active keys plus its revoked ones.
+        route = mocked_api.get("/api-keys").respond(200, json=[])
+
+        client.api_keys.list(number=200, offset=200)
+
+        params = route.calls.last.request.url.params
+        assert params["number"] == "200"
+        assert params["offset"] == "200"
+
     def test_revoke(self, client, mocked_api):
         route = mocked_api.delete("/api-keys/2").respond(200)
 
@@ -59,10 +86,81 @@ class TestApiKeys:
 
 
 class TestReconciliationReaders:
-    def test_bare_array_body_with_pagination_params_and_count_header(
-        self, client, mocked_api
-    ):
+    def test_page_and_per_page_become_number_and_offset(self, client, mocked_api):
+        # Siren's list routes page with `number` and `offset` (PageSizeMiddleware).
+        # They never read `page` or `perPage`, so the SDK used to return the
+        # first 10 rows whatever page was asked for.
         route = mocked_api.get("/conversions").respond(
+            200,
+            json={"items": [{"id": 1}], "total": 51, "page": 2, "perPage": 50, "totalPages": 2},
+        )
+
+        page = client.conversions.list(page=2, per_page=50)
+
+        params = route.calls.last.request.url.params
+        assert params["number"] == "50"
+        assert params["offset"] == "50"
+        assert "page" not in params
+        assert "perPage" not in params
+        assert page.page == 2
+        assert page.per_page == 50
+
+    def test_envelope_body_is_read(self, client, mocked_api):
+        # GetConversions, GetTransactions, GetObligations and GetPayouts run
+        # ListResponseWrapperInterceptor, so the body is
+        # {items, total, page, perPage, totalPages}, not a bare array. The SDK
+        # used to read only bare arrays and returned no rows at all.
+        mocked_api.get("/conversions").respond(
+            200,
+            json={
+                "items": [{"id": 1}, {"id": 2}],
+                "total": 12,
+                "page": 1,
+                "perPage": 10,
+                "totalPages": 2,
+            },
+            headers={"x-siren-estimated-count": "12"},
+        )
+
+        page = client.conversions.list()
+
+        assert page.data == [{"id": 1}, {"id": 2}]
+        assert page.total == 12
+        assert page.page == 1
+        assert page.per_page == 10
+        assert page.total_pages == 2
+
+    def test_page_without_per_page_uses_default_size(self, client, mocked_api):
+        route = mocked_api.get("/payouts").respond(200, json={"items": []})
+
+        client.payouts.list(page=3)
+
+        params = route.calls.last.request.url.params
+        assert params["number"] == "10"
+        assert params["offset"] == "20"
+
+    def test_per_page_is_capped_at_200(self, client, mocked_api):
+        # Siren lowers a larger `number` to 200. Clamping here too keeps a
+        # page-based offset from skipping the rows between the two sizes.
+        route = mocked_api.get("/transactions").respond(200, json={"items": []})
+
+        client.transactions.list(page=2, per_page=500)
+
+        params = route.calls.last.request.url.params
+        assert params["number"] == "200"
+        assert params["offset"] == "200"
+
+    def test_explicit_number_and_offset_win(self, client, mocked_api):
+        route = mocked_api.get("/obligations").respond(200, json={"items": []})
+
+        client.obligations.list(page=5, per_page=20, number=30, offset=7)
+
+        params = route.calls.last.request.url.params
+        assert params["number"] == "30"
+        assert params["offset"] == "7"
+
+    def test_bare_array_body_falls_back_to_count_header(self, client, mocked_api):
+        mocked_api.get("/conversions").respond(
             200,
             json=[{"id": 1}],
             headers={"x-siren-estimated-count": "51"},
@@ -70,13 +168,11 @@ class TestReconciliationReaders:
 
         page = client.conversions.list(page=2, per_page=50)
 
-        request = route.calls.last.request
-        assert request.url.params["page"] == "2"
-        assert request.url.params["perPage"] == "50"
         assert page.data == [{"id": 1}]
-        assert page.page == 2  # echoes the request arg
-        assert page.per_page == 50  # echoes the request arg
-        assert page.total == 51  # from x-siren-estimated-count header
+        assert page.page == 2
+        assert page.per_page == 50
+        assert page.total == 51
+        assert page.total_pages is None
 
     def test_total_none_when_count_header_absent(self, client, mocked_api):
         mocked_api.get("/conversions").respond(200, json=[{"id": 1}])
@@ -89,7 +185,7 @@ class TestReconciliationReaders:
         assert page.per_page is None
 
     def test_extra_filters_pass_through_as_camel_case(self, client, mocked_api):
-        route = mocked_api.get("/payouts").respond(200, json=[])
+        route = mocked_api.get("/payouts").respond(200, json={"items": []})
 
         client.payouts.list(status="paid", collaborator_id=88)
 
@@ -104,15 +200,14 @@ class TestReconciliationReaders:
             ("obligations", "/obligations"),
             ("payouts", "/payouts"),
         ]:
-            route = mocked_api.get(path).respond(200, json=[])
+            route = mocked_api.get(path).respond(200, json={"items": []})
             getattr(client, name).list()
             assert route.called, path
 
     def test_list_page_is_iterable_and_sized(self, client, mocked_api):
         mocked_api.get("/transactions").respond(
             200,
-            json=[{"id": 1}, {"id": 2}],
-            headers={"x-siren-estimated-count": "2"},
+            json={"items": [{"id": 1}, {"id": 2}], "total": 2},
         )
 
         page = client.transactions.list()
@@ -122,7 +217,7 @@ class TestReconciliationReaders:
         assert page[0]["id"] == 1
 
     def test_no_params_sends_no_query_string(self, client, mocked_api):
-        route = mocked_api.get("/obligations").respond(200, json=[])
+        route = mocked_api.get("/obligations").respond(200, json={"items": []})
 
         client.obligations.list()
 

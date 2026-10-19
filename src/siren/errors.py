@@ -3,7 +3,8 @@
 One base error (:class:`SirenError`), with subclasses selected by HTTP status.
 Every HTTP-derived error carries ``message``, ``code`` (the API's
 machine-readable ``error.code`` when present), ``status_code``, and ``data``
-(the API's ``error.data`` payload when present).
+(the API's ``error.data`` payload, or its ``error.context`` when there is no
+``data``).
 """
 
 from __future__ import annotations
@@ -35,8 +36,33 @@ class SirenError(Exception):
         )
 
 
+def _field_errors(data: Any) -> Dict[str, Any]:
+    """Per-field messages from an error payload.
+
+    Siren's REST layer refuses a request that fails validation with a 400 and
+    ``error.context = {"type": "VALIDATION_FAILED", "failedValidations":
+    {field: [messages]}}``. Any other object payload is returned as is.
+    """
+    if not isinstance(data, dict):
+        return {}
+    failed = data.get("failedValidations")
+    if isinstance(failed, dict):
+        return failed
+    return data
+
+
 class BadRequestError(SirenError):
-    """400 — the request was malformed."""
+    """400 — the request was malformed or failed validation.
+
+    Siren answers a failed field check with 400. ``field_errors`` maps each
+    field that failed to its messages, and ``code`` is ``VALIDATION_FAILED``.
+    """
+
+    @property
+    def field_errors(self) -> Dict[str, Any]:
+        if isinstance(self.data, dict) and isinstance(self.data.get("failedValidations"), dict):
+            return self.data["failedValidations"]
+        return {}
 
 
 class AuthenticationError(SirenError):
@@ -56,15 +82,16 @@ class ConflictError(SirenError):
 
 
 class ValidationError(SirenError):
-    """422 — the request body failed validation.
+    """422 — the request was understood but refused.
 
-    ``field_errors`` exposes the per-field errors from ``error.data`` when the
+    Most field checks answer 400 (:class:`BadRequestError`). A few routes
+    still answer 422. ``field_errors`` exposes the per-field errors when the
     API provides them.
     """
 
     @property
     def field_errors(self) -> Dict[str, Any]:
-        return self.data if isinstance(self.data, dict) else {}
+        return _field_errors(self.data)
 
 
 class RateLimitError(SirenError):
@@ -109,11 +136,14 @@ _STATUS_TO_ERROR = {
 def error_from_response(response: Any) -> SirenError:
     """Build the right :class:`SirenError` subclass from an HTTP response.
 
-    The failure body is polymorphic. Most endpoints emit a plain-string error
-    (``{"error": "<message>"}``); structured errors (login/entitlement) emit
-    ``{"error": {"message", "code", "data"?}}``. Both are parsed; ``code`` and
-    ``data`` are populated only from the object form. Falls back to the HTTP
-    status text when the body is missing, not JSON, or has no ``error`` key.
+    The failure body is polymorphic. Some endpoints emit a plain-string error
+    (``{"error": "<message>"}``). Siren's REST layer emits
+    ``{"error": {"message", "code"?, "context"}}``, and a few errors carry
+    ``data``. ``data`` is read from ``error.data``, or from ``error.context``
+    when that is a non-empty object. ``code`` is ``error.code``, or the
+    context's ``type`` (such as ``VALIDATION_FAILED``) when there is no code.
+    Falls back to the HTTP status text when the body is missing, not JSON, or
+    has no ``error`` key.
     """
     status = response.status_code
     try:
@@ -131,8 +161,14 @@ def error_from_response(response: Any) -> SirenError:
         message = error or fallback
     elif isinstance(error, dict):
         message = error.get("message") or fallback
-        code = error.get("code")
+        raw_code = error.get("code")
+        code = raw_code if isinstance(raw_code, str) else None
         data = error.get("data")
+        context = error.get("context")
+        if data is None and isinstance(context, dict) and context:
+            data = context
+        if code is None and isinstance(data, dict) and isinstance(data.get("type"), str):
+            code = data["type"]
 
     error_cls = _STATUS_TO_ERROR.get(status, ApiError)
     if error_cls is RateLimitError:

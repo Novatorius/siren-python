@@ -167,3 +167,80 @@ def test_every_http_error_subclasses_siren_error():
         siren.ConnectionError,
     ):
         assert issubclass(error_cls, siren.SirenError)
+
+
+def test_failed_validation_400_reads_context(mocked_api):
+    # Siren's SaaS RestStrategy renders a RestException as
+    # {"error": {"message", "code"?, "context"}}, and ValidationMiddleware puts
+    # {"type": "VALIDATION_FAILED", "failedValidations": {...}} in the context
+    # with a 400. The SDK used to read only `error.data`, which this shape
+    # never has, so `data`, `code` and the field errors were always empty.
+    failures = {"trackingId": ["must be a whole number from 0 to 9007199254740991"]}
+    mocked_api.post("/event/sale").respond(
+        400,
+        json={
+            "error": {
+                "message": "Validations failed.",
+                "context": {"type": "VALIDATION_FAILED", "failedValidations": failures},
+            }
+        },
+    )
+
+    with pytest.raises(siren.BadRequestError) as excinfo:
+        _no_retry_client().events.sale(
+            source="stripe", external_id="x", total=1.0, tracking_id=-1
+        )
+
+    assert excinfo.value.code == "VALIDATION_FAILED"
+    assert excinfo.value.field_errors == failures
+    assert excinfo.value.data["failedValidations"] == failures
+
+
+def test_context_is_data_and_error_code_wins(mocked_api):
+    mocked_api.get("/conversions").respond(
+        403,
+        json={
+            "error": {
+                "message": "This connected site may not do that.",
+                "code": "missing_scope",
+                "context": {"type": "IGNORED", "requiredScope": "connect:records:read"},
+            }
+        },
+    )
+
+    with pytest.raises(siren.PermissionError) as excinfo:
+        _no_retry_client().conversions.list()
+
+    assert excinfo.value.code == "missing_scope"
+    assert excinfo.value.data == {"type": "IGNORED", "requiredScope": "connect:records:read"}
+
+
+def test_empty_context_leaves_data_none(mocked_api):
+    mocked_api.get("/conversions").respond(
+        401, json={"error": {"message": "Authentication required.", "context": []}}
+    )
+
+    with pytest.raises(siren.AuthenticationError) as excinfo:
+        _no_retry_client().conversions.list()
+
+    assert excinfo.value.message == "Authentication required."
+    assert excinfo.value.data is None
+    assert excinfo.value.code is None
+
+
+def test_bad_request_without_failed_validations_has_no_field_errors(mocked_api):
+    mocked_api.post("/api-keys").respond(
+        400,
+        json={
+            "error": {
+                "message": "API keys send events to Siren and cannot read or change records.",
+                "context": {"field": "scopes", "scope": "programs:read"},
+            }
+        },
+    )
+
+    with pytest.raises(siren.BadRequestError) as excinfo:
+        _no_retry_client().api_keys.create(label="x", scopes=["programs:read"])
+
+    assert excinfo.value.field_errors == {}
+    assert excinfo.value.data == {"field": "scopes", "scope": "programs:read"}

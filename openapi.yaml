@@ -12,10 +12,20 @@ info:
     webhooks, API keys, and read endpoints for reconciliation. The full admin
     surface used by the Siren dashboard is intentionally out of scope here.
 
-    All requests authenticate with an API key as a bearer token
-    (`Authorization: Bearer sk_live_...`). Responses are wrapped as
-    `{ "data": ... }` on success and `{ "error": { "message", "code" } }` on
-    failure.
+    Every request carries a bearer token. An API key
+    (`Authorization: Bearer sk_live_...`) sends events and does nothing else,
+    so on Siren Cloud only the `/event/...` routes accept it. The webhook,
+    API key and reconciliation routes need a signed-in dashboard session's
+    token, and the reconciliation routes also take a connected site's OAuth
+    token that holds `connect:records:read`. Any other credential gets a 401.
+
+    Success bodies are not wrapped. A record is a bare object. The webhook
+    and API key lists are bare arrays, and the reconciliation lists are
+    `{ items, total, page, perPage, totalPages }`. A failure is
+    `{ "error": { "message", "code"?, "context" } }`, and a few routes answer
+    `{ "error": "<message>" }`. A request whose fields fail their checks gets
+    a 400 with `context.type` of `VALIDATION_FAILED` and the messages in
+    `context.failedValidations`.
   contact:
     name: Siren
     url: https://sirenaffiliates.com
@@ -32,7 +42,19 @@ tags:
   - name: Events
     description: Ingest commerce and tracking events.
   - name: Webhooks
-    description: Subscribe to program events; delivered as signed HTTP callbacks.
+    description: |
+      Subscribe to program events, delivered as signed HTTP callbacks.
+
+      Each delivery is a `POST` with `X-Siren-Signature: sha256=<hex>` (an
+      HMAC-SHA256 of the raw body keyed by the subscription's signing secret),
+      `X-Siren-Event` (the event type) and `X-Siren-Delivery` (the event id,
+      `evt_...`, which stays the same across retries). For a subscription made
+      through `POST /webhooks` the body is the event's payload alone, such as
+      `{"conversionId": 991}`. A subscription that belongs to a connected site
+      gets a versioned envelope instead:
+      `{version, id, type, kind, occurredAt, propertyId, match,
+      originPropertyId, data, records, recordDetail, omittedRecords,
+      recordsTruncated}`.
   - name: API Keys
     description: Manage API keys.
   - name: Reconciliation
@@ -56,13 +78,25 @@ paths:
             schema: { $ref: '#/components/schemas/SalePayload' }
       responses:
         '200':
-          description: Sale accepted.
+          description: |
+            The sale was handled. The body says what came of it. Sending the
+            same `source` and `externalId` again records nothing new and
+            answers `duplicate`.
           headers:
             X-Siren-OID: { $ref: '#/components/headers/XSirenOID' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SaleOutcome' }
+        '202': { $ref: '#/components/responses/Queued' }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
-        '422': { $ref: '#/components/responses/ValidationError' }
         '429': { $ref: '#/components/responses/RateLimited' }
+        '500':
+          description: The sale could not be recorded and nothing was saved. It is safe to send it again.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
   /event/refund:
     post:
       tags: [Events]
@@ -70,7 +104,9 @@ paths:
       summary: Record a refund
       description: |
         Reverses a previously recorded sale, matched by `(externalId, source)`.
-        Returns 404 if no matching sale transaction exists.
+        Returns 404 if no matching sale transaction exists. While the
+        organization's processing is paused the refund is queued (202) and the
+        sale is looked up when the queue replays.
       requestBody:
         required: true
         content:
@@ -78,12 +114,15 @@ paths:
             schema: { $ref: '#/components/schemas/RefundPayload' }
       responses:
         '200':
-          description: Refund accepted.
+          description: Refund accepted. The body is empty.
           headers:
             X-Siren-OID: { $ref: '#/components/headers/XSirenOID' }
+        '202': { $ref: '#/components/responses/Queued' }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
-        '422': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
   /event/site-visited:
     post:
       tags: [Events]
@@ -91,7 +130,9 @@ paths:
       summary: Record a referred visit
       description: |
         Records a referred visit and opens an opportunity attributed to the
-        given collaborator.
+        given collaborator. A visit for a collaborator that does not exist or
+        is not active writes nothing and answers `not_attributed` with a
+        `reason`.
       requestBody:
         required: true
         content:
@@ -99,11 +140,25 @@ paths:
             schema: { $ref: '#/components/schemas/SiteVisitedPayload' }
       responses:
         '200':
-          description: Visit accepted.
+          description: The visit was handled. The body says what came of it.
           headers:
             X-Siren-OID: { $ref: '#/components/headers/XSirenOID' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VisitOutcome' }
+        '202':
+          description: |
+            The organization's processing is paused. The visit was queued and
+            will be recorded on the returned opportunity.
+          headers:
+            X-Siren-OID: { $ref: '#/components/headers/XSirenOID' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/VisitOutcome' }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '422': { $ref: '#/components/responses/ValidationError' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '429': { $ref: '#/components/responses/RateLimited' }
   /event/{eventSlug}:
     post:
       tags: [Events]
@@ -112,12 +167,15 @@ paths:
       description: |
         Ingests any event type registered on the organization, including custom
         event types. The three built-in slugs are `sale`, `refund`, and
-        `site-visited`.
+        `site-visited`. Custom slugs are lowercase letters and digits joined
+        by single hyphens. An unknown slug answers 404. The slugs a connected
+        site forwards, such as `sale-triggered`, need that exact
+        `event:{slug}` scope, and `event:*` does not reach them.
       parameters:
         - name: eventSlug
           in: path
           required: true
-          schema: { type: string }
+          schema: { type: string, pattern: '^[a-z0-9]+(-[a-z0-9]+)*$' }
           example: loyalty-points-earned
       requestBody:
         required: true
@@ -131,17 +189,25 @@ paths:
           description: Event accepted.
           headers:
             X-Siren-OID: { $ref: '#/components/headers/XSirenOID' }
+        '202': { $ref: '#/components/responses/Queued' }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
-        '422': { $ref: '#/components/responses/ValidationError' }
+        '429': { $ref: '#/components/responses/RateLimited' }
   /webhooks:
     get:
       tags: [Webhooks]
       operationId: listWebhookSubscriptions
       summary: List webhook subscriptions
+      parameters:
+        - { $ref: '#/components/parameters/Number200' }
+        - { $ref: '#/components/parameters/Offset' }
       responses:
         '200':
-          description: Subscriptions (bare array).
+          description: Subscriptions (bare array). The total is in `x-siren-estimated-count`.
+          headers:
+            x-siren-estimated-count: { $ref: '#/components/headers/EstimatedCount' }
           content:
             application/json:
               schema:
@@ -157,6 +223,9 @@ paths:
         `signingSecret`, returned **once** — store it to verify future
         deliveries. Deliveries are signed with
         `X-Siren-Signature: sha256=<hmac-sha256(rawBody, signingSecret)>`.
+        `events` is stored as given and is not checked against the catalog,
+        so a name Siren does not send is accepted and never delivered. An
+        organization holds at most 100 subscriptions.
       requestBody:
         required: true
         content:
@@ -175,8 +244,26 @@ paths:
                       signingSecret:
                         type: string
                         description: HMAC signing secret. Returned once.
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '422': { $ref: '#/components/responses/ValidationError' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /webhooks/events:
+    get:
+      tags: [Webhooks]
+      operationId: listWebhookEventTypes
+      summary: List the event types a webhook can subscribe to
+      description: |
+        The catalog the dashboard's event picker is built from. It names
+        exactly the event types Siren sends.
+      responses:
+        '200':
+          description: Event types (bare array).
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/WebhookCatalogEntry' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
   /webhooks/{id}:
     get:
       tags: [Webhooks]
@@ -199,7 +286,14 @@ paths:
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
       responses:
-        '200': { description: Deleted. }
+        '200':
+          description: Deleted.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean, example: true }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
   /api-keys:
@@ -207,9 +301,15 @@ paths:
       tags: [API Keys]
       operationId: listApiKeys
       summary: List API keys
+      description: Organization admins only. Revoked keys are listed too.
+      parameters:
+        - { $ref: '#/components/parameters/Number200' }
+        - { $ref: '#/components/parameters/Offset' }
       responses:
         '200':
-          description: API keys (bare array, without raw key material).
+          description: API keys (bare array, without raw key material). The total is in `x-siren-estimated-count`.
+          headers:
+            x-siren-estimated-count: { $ref: '#/components/headers/EstimatedCount' }
           content:
             application/json:
               schema:
@@ -221,8 +321,11 @@ paths:
       operationId: createApiKey
       summary: Create an API key
       description: |
-        Creates a new API key. The plaintext `rawKey` (`sk_live_...`) is
-        returned **once** and cannot be retrieved later.
+        Creates a new API key. Organization admins only. The plaintext
+        `rawKey` (`sk_live_...`) is returned **once** and cannot be retrieved
+        later. A key may hold event scopes only (`event:*` or
+        `event:{slug}`), or `*`. A resource scope such as `programs:read` is
+        refused with a 400. An organization holds at most 250 active keys.
       requestBody:
         required: true
         content:
@@ -241,8 +344,9 @@ paths:
                       rawKey:
                         type: string
                         description: Plaintext key. Returned once.
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '422': { $ref: '#/components/responses/ValidationError' }
+        '403': { $ref: '#/components/responses/Forbidden' }
   /api-keys/{id}:
     delete:
       tags: [API Keys]
@@ -251,7 +355,11 @@ paths:
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
       responses:
-        '200': { description: Revoked. }
+        '200':
+          description: Revoked. The body is the revoked key.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiKey' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
   /conversions:
@@ -260,8 +368,8 @@ paths:
       operationId: listConversions
       summary: List conversions
       parameters:
-        - { $ref: '#/components/parameters/Page' }
-        - { $ref: '#/components/parameters/PerPage' }
+        - { $ref: '#/components/parameters/Number' }
+        - { $ref: '#/components/parameters/Offset' }
       responses:
         '200': { $ref: '#/components/responses/PaginatedList' }
         '401': { $ref: '#/components/responses/Unauthorized' }
@@ -271,8 +379,8 @@ paths:
       operationId: listTransactions
       summary: List transactions
       parameters:
-        - { $ref: '#/components/parameters/Page' }
-        - { $ref: '#/components/parameters/PerPage' }
+        - { $ref: '#/components/parameters/Number' }
+        - { $ref: '#/components/parameters/Offset' }
       responses:
         '200': { $ref: '#/components/responses/PaginatedList' }
         '401': { $ref: '#/components/responses/Unauthorized' }
@@ -282,8 +390,8 @@ paths:
       operationId: listObligations
       summary: List obligations
       parameters:
-        - { $ref: '#/components/parameters/Page' }
-        - { $ref: '#/components/parameters/PerPage' }
+        - { $ref: '#/components/parameters/Number' }
+        - { $ref: '#/components/parameters/Offset' }
       responses:
         '200': { $ref: '#/components/responses/PaginatedList' }
         '401': { $ref: '#/components/responses/Unauthorized' }
@@ -293,8 +401,8 @@ paths:
       operationId: listPayouts
       summary: List payouts
       parameters:
-        - { $ref: '#/components/parameters/Page' }
-        - { $ref: '#/components/parameters/PerPage' }
+        - { $ref: '#/components/parameters/Number' }
+        - { $ref: '#/components/parameters/Offset' }
       responses:
         '200': { $ref: '#/components/responses/PaginatedList' }
         '401': { $ref: '#/components/responses/Unauthorized' }
@@ -309,15 +417,25 @@ components:
     XSirenOID:
       description: The opportunity (tracking) id associated with the event.
       schema: { type: integer }
+    EstimatedCount:
+      description: Total number of records across all pages.
+      schema: { type: integer }
   parameters:
-    Page:
-      name: page
+    Number:
+      name: number
       in: query
-      schema: { type: integer, minimum: 1, default: 1 }
-    PerPage:
-      name: perPage
+      description: Page size. A value above 200 is lowered to 200. Below 1 is refused with a 400.
+      schema: { type: integer, minimum: 1, maximum: 200, default: 10 }
+    Number200:
+      name: number
       in: query
-      schema: { type: integer, minimum: 1, maximum: 100, default: 25 }
+      description: Page size. A value above 200 is lowered to 200. Below 1 is refused with a 400.
+      schema: { type: integer, minimum: 1, maximum: 200, default: 200 }
+    Offset:
+      name: offset
+      in: query
+      description: The first row to return.
+      schema: { type: integer, minimum: 0, default: 0 }
   schemas:
     SalePayload:
       type: object
@@ -326,60 +444,124 @@ components:
         source:
           type: string
           description: Commerce source identifier.
+          minLength: 1
+          maxLength: 249
           example: stripe
         externalId:
           type: string
-          description: Your order/transaction id; used to match refunds later.
+          description: Your order/transaction id; used to match refunds later. A number is accepted too.
+          minLength: 1
+          maxLength: 32
           example: cs_test_a1b2c3
         total:
           type: number
           description: Order total in major currency units.
+          minimum: 0
+          maximum: 999999999.99
           example: 49.99
         trackingId:
           type: integer
           description: Opportunity id from the Siren tracking cookie / attribution.
+          minimum: 0
           example: 4021
         currency:
           type: string
-          description: ISO currency code.
-          default: USD
+          description: |
+            A currency code the organization uses. Every line is recorded in
+            it. Without it the lines carry no currency and read as the
+            organization's default.
+          example: USD
         items:
           type: array
+          maxItems: 500
+          description: The lines may add up to no more than 999,999,999.99.
           items: { $ref: '#/components/schemas/LineItem' }
     LineItem:
       type: object
-      required: [name, quantity, amount]
+      required: [amount]
       properties:
-        externalId: { type: string }
-        name: { type: string, example: Pro Plan (annual) }
-        quantity: { type: integer, minimum: 1, default: 1 }
+        externalId: { type: string, maxLength: 255 }
+        name: { type: string, maxLength: 255, example: Pro Plan (annual) }
+        quantity: { type: integer, minimum: 1, maximum: 1000000, default: 1 }
         amount:
           type: number
           description: Per-unit price in major currency units.
+          minimum: 0
+          maximum: 999999999.99
           example: 49.99
     RefundPayload:
       type: object
       required: [source, externalId]
       properties:
-        source: { type: string, example: stripe }
-        externalId: { type: string, example: cs_test_a1b2c3 }
+        source: { type: string, minLength: 1, maxLength: 249, example: stripe }
+        externalId: { type: string, minLength: 1, maxLength: 32, example: cs_test_a1b2c3 }
     SiteVisitedPayload:
       type: object
       required: [collaboratorId]
       properties:
-        collaboratorId: { type: integer, example: 88 }
-        userId: { type: integer, example: 12345 }
+        collaboratorId: { type: integer, minimum: 1, example: 88 }
+        userId: { type: integer, minimum: 1, example: 12345 }
+    SaleOutcome:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [created, recorded, duplicate, unattributed, ignored]
+        created: { type: boolean }
+        transactionId: { type: integer, nullable: true }
+        conversions:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: integer }
+              status: { type: string }
+        message: { type: string }
+        reason:
+          type: string
+          description: Present when a recorded sale earned nothing.
+          enum: [no_engagement, engagement_used, engagement_ended, not_awarded]
+    VisitOutcome:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [attributed, recorded, not_attributed, queued]
+        attributed: { type: boolean }
+        opportunityId: { type: integer, nullable: true }
+        queued: { type: boolean }
+        message: { type: string }
+        reason:
+          type: string
+          enum: [collaborator_not_found, collaborator_not_active]
+    QueuedEvent:
+      type: object
+      properties:
+        status: { type: string, enum: [queued] }
+        queued: { type: boolean, enum: [true] }
+        message: { type: string }
     WebhookSubscription:
       type: object
       properties:
         id: { type: integer }
         targetUrl: { type: string, format: uri }
+        urlValid: { type: boolean }
+        urlProblem: { type: string, nullable: true }
         events:
           type: array
-          items: { $ref: '#/components/schemas/WebhookEventType' }
-        description: { type: string }
+          items: { type: string }
         status: { type: string, example: active }
-        createdAt: { type: string, format: date-time }
+        description: { type: string }
+        propertyId: { type: integer, nullable: true }
+        oauthClientId: { type: string, nullable: true }
+        dateCreated: { type: string, format: date-time, nullable: true }
+        dateModified: { type: string, format: date-time, nullable: true }
+    WebhookCatalogEntry:
+      type: object
+      properties:
+        event: { $ref: '#/components/schemas/WebhookEventType' }
+        category: { type: string, example: Conversions }
+        label: { type: string, example: A conversion was approved }
     WebhookSubscriptionCreate:
       type: object
       required: [targetUrl, events]
@@ -389,7 +571,7 @@ components:
           type: array
           items: { $ref: '#/components/schemas/WebhookEventType' }
           example: ['conversion.approved', 'payout.paid']
-        description: { type: string }
+        description: { type: string, maxLength: 255 }
     WebhookEventType:
       type: string
       description: A subscribable event type. Use `*` to subscribe to all.
@@ -397,12 +579,18 @@ components:
         - '*'
         - allocation.completed
         - collaborator.created
+        - collaborator.deactivated
         - collaborator.registered
+        - collaborator.updated
         - conversion.approved
         - conversion.created
         - conversion.rejected
         - conversion.renewed
         - coupon.applied
+        - credit.issued
+        - credit.redeemed
+        - currency.created
+        - currency.deleted
         - distribution.completed
         - engagement.awarded
         - engagement.completed
@@ -417,6 +605,7 @@ components:
         - opportunity.invalidated
         - payout.created
         - payout.paid
+        - program.created
         - refund.created
         - renewal.created
         - sale.created
@@ -429,27 +618,43 @@ components:
         keyPrefix: { type: string, example: sk_live_a1b2c3d4 }
         label: { type: string }
         status: { type: string, example: active }
+        propertyId: { type: integer, nullable: true }
         scopes:
           type: array
           items: { type: string }
-        createdAt: { type: string, format: date-time }
         expiresAt: { type: string, format: date-time, nullable: true }
         lastUsedAt: { type: string, format: date-time, nullable: true }
+        revokedAt: { type: string, format: date-time, nullable: true }
+        dateCreated: { type: string, format: date-time, nullable: true }
+        dateModified: { type: string, format: date-time, nullable: true }
     ApiKeyCreate:
       type: object
-      required: [label]
+      required: [scopes]
       properties:
         label: { type: string, example: Production server }
         scopes:
           type: array
+          minItems: 1
           items: { type: string }
-          description: Omit for full access.
+          example: ['event:*']
+          description: |
+            Required. Event scopes only: `event:*`, or `event:{slug}` for one
+            event type. `*` is also accepted.
+        expiresAt:
+          type: string
+          format: date-time
+          description: When the key stops working. Must be in the future.
+        propertyId:
+          type: integer
+          description: Ties the key to one of the organization's Properties.
     Error:
       type: object
       description: |
-        `error` is polymorphic. Most endpoints return a plain string message;
-        structured errors (e.g. login/entitlement denial) return an object with
-        `message`/`code`/`data`. Clients must handle both.
+        `error` is polymorphic. Siren's REST layer returns an object with
+        `message`, `context`, and a stable `code` on refusals that have one
+        (such as `missing_scope`, `site_disconnected`, `plan_required` or
+        `not_permitted`). A few routes return a plain string message. Clients
+        must handle both.
       properties:
         error:
           oneOf:
@@ -458,24 +663,52 @@ components:
               properties:
                 message: { type: string }
                 code: { type: string }
-                data: { type: object, additionalProperties: true }
+                context:
+                  description: |
+                    Details of the refusal. A failed field check carries
+                    `{type: VALIDATION_FAILED, failedValidations: {field: [message]}}`.
+                    An empty context may be encoded as `[]`.
+                  oneOf:
+                    - type: object
+                      additionalProperties: true
+                    - type: array
+                      maxItems: 0
   responses:
     PaginatedList:
       description: |
-        A bare JSON array of records. The estimated total count, when the
-        endpoint paginates, is returned in the `x-siren-estimated-count`
-        response header (not in the body).
+        One page of records with its paging details. The total is also in the
+        `x-siren-estimated-count` response header.
       headers:
-        x-siren-estimated-count:
-          schema: { type: integer }
-          description: Estimated total number of records across all pages.
+        x-siren-estimated-count: { $ref: '#/components/headers/EstimatedCount' }
       content:
         application/json:
           schema:
-            type: array
-            items: { type: object, additionalProperties: true }
+            type: object
+            properties:
+              items:
+                type: array
+                items: { type: object, additionalProperties: true }
+              total: { type: integer }
+              page: { type: integer }
+              perPage: { type: integer }
+              totalPages: { type: integer }
+    Queued:
+      description: |
+        The organization's processing is paused. The event was queued and
+        will be processed once processing resumes. When the queue is full the
+        answer is a 429 instead.
+      headers:
+        X-Siren-OID: { $ref: '#/components/headers/XSirenOID' }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/QueuedEvent' }
+    BadRequest:
+      description: The request was malformed, or a field failed its check.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
     Unauthorized:
-      description: Missing or invalid API key.
+      description: Missing, invalid or wrong kind of credential.
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
@@ -486,11 +719,6 @@ components:
           schema: { $ref: '#/components/schemas/Error' }
     NotFound:
       description: Resource not found.
-      content:
-        application/json:
-          schema: { $ref: '#/components/schemas/Error' }
-    ValidationError:
-      description: The request body failed validation.
       content:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }

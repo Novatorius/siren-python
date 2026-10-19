@@ -176,3 +176,59 @@ class TestEventResult:
         )
 
         assert result.opportunity_id is None
+
+
+class TestEventOutcome:
+    def test_sale_outcome_body_is_exposed(self, client, mocked_api):
+        # SaleEventFactory now answers with SaleIngestion's outcome instead of
+        # an empty 200. The SDK used to drop the body, so a sale that matched
+        # no opportunity looked the same as one that paid out.
+        mocked_api.post("/event/sale").respond(
+            200,
+            json={
+                "status": "unattributed",
+                "created": False,
+                "transactionId": None,
+                "conversions": [],
+                "message": "The tracking id matches no opportunity.",
+            },
+        )
+
+        result = client.events.sale(
+            source="woo", external_id="1", total=1.0, tracking_id=1
+        )
+
+        assert result.http_status == 200
+        assert result.status == "unattributed"
+        assert result.body["created"] is False
+        assert result.queued is False
+
+    def test_queued_event_is_reported(self, client, mocked_api):
+        # IngestEvent queues an event with a 202 while the org's processing
+        # is paused, instead of refusing it with a 429.
+        mocked_api.post("/event/site-visited").respond(
+            202,
+            json={
+                "status": "queued",
+                "queued": True,
+                "attributed": False,
+                "opportunityId": 77,
+                "message": "Engine activity is paused for this organization.",
+            },
+            headers={"X-Siren-OID": "77"},
+        )
+
+        result = client.events.site_visited(collaborator_id=5)
+
+        assert result.queued is True
+        assert result.status == "queued"
+        assert result.opportunity_id == 77
+
+    def test_empty_body_gives_empty_dict(self, client, mocked_api):
+        mocked_api.post("/event/refund").respond(200)
+
+        result = client.events.refund(source="woo", external_id="1")
+
+        assert result.body == {}
+        assert result.status is None
+        assert result.queued is False

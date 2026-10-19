@@ -54,7 +54,13 @@ result = client.events.sale(
 )
 
 print(result.opportunity_id)  # read from the X-Siren-OID response header
+print(result.status)          # created, recorded, duplicate, unattributed, ignored, or queued
 ```
+
+Siren answers each sale with what came of it, in `result.body`. Sending the
+same `source` and `external_id` again records nothing new and answers
+`duplicate`. While your organization's processing is paused, Siren queues the
+event and answers `202`, and `result.queued` is `True`.
 
 With line items (reward pools compute `amount x quantity` per line; a missing
 `quantity` defaults to `1`):
@@ -88,7 +94,12 @@ client.events.ingest("loyalty-points-earned", {"points": 120, "memberId": "m_9"}
 Siren signs every delivery with `X-Siren-Signature: sha256=<hex hmac>` — an
 HMAC-SHA256 of the **raw request body** keyed by your subscription's signing
 secret. `construct_event` verifies the signature (constant-time) and parses
-the event in one call:
+the event in one call.
+
+The body is the event's payload alone, such as `{"conversionId": 991}`. The
+event type arrives in the `X-Siren-Event` header and the event id in
+`X-Siren-Delivery`, so pass both headers along. The event id stays the same
+when Siren retries a delivery, so use it to drop repeats.
 
 ```python
 import siren
@@ -105,6 +116,8 @@ def handle_webhook():
             request.get_data(),                        # RAW body bytes — critical
             request.headers.get("X-Siren-Signature"),
             "whsec_...",                               # your signing secret
+            event_type=request.headers.get("X-Siren-Event"),
+            delivery_id=request.headers.get("X-Siren-Delivery"),
         )
     except siren.SignatureVerificationError:
         return "invalid signature", 400
@@ -153,20 +166,31 @@ client.webhooks.subscriptions.delete(subscription.id)
   HMAC-SHA256 signature in constant time and parses the payload.
 - **Subscription and API-key management** — create, list, delete subscriptions;
   create, list, revoke API keys. One-time secrets are never auto-retried.
+  These calls need a signed-in dashboard session (see below).
 - **Reconciliation readers** — paginated access to conversions, transactions,
   obligations, and payouts.
 - **Typed, correct errors** — every failure subclasses `siren.SirenError` with
-  `message`, `code`, and `status_code`; `ValidationError.field_errors` and
+  `message`, `code`, and `status_code`; `BadRequestError.field_errors` and
   `RateLimitError.retry_after` where relevant.
 - **Automatic retries** — exponential backoff on network errors and 429/5xx for
   idempotent reads and event ingestion (never for secret-minting writes).
 - **Fully typed** — ships `py.typed`; works with mypy and Pyright out of the box.
 
+### Credentials
+
+An API key (`sk_live_...`) sends events and does nothing else. On Siren Cloud,
+the event routes (`/event/...`) accept it, and every other route refuses it
+with a 401. Subscriptions, API keys, and the reconciliation readers need a
+signed-in dashboard session's token, or for the readers a connected site's
+token, passed as `api_key`. API keys themselves are managed by organization
+admins only.
+
 ### API keys
 
 ```python
-key = client.api_keys.create(label="Production server")
+key = client.api_keys.create(label="Production server", scopes=["event:*"])
 print(key.raw_key)  # sk_live_... — returned ONCE, cannot be retrieved later
+# scopes is required. Siren issues event scopes only: "event:*" or "event:sale".
 
 client.api_keys.list()      # no raw key material
 client.api_keys.revoke(key.id)
@@ -174,13 +198,14 @@ client.api_keys.revoke(key.id)
 
 ### Reconciliation
 
-Thin paginated readers over Siren's ledger:
+Thin paginated readers over Siren's ledger. `page` and `per_page` become
+Siren's `number` and `offset`, and a page holds at most 200 records:
 
 ```python
 page = client.conversions.list(page=1, per_page=50)
 for conversion in page:
     print(conversion["id"])
-print(page.total)
+print(page.total, page.total_pages)
 
 client.transactions.list()
 client.obligations.list()
@@ -194,12 +219,12 @@ All errors subclass `siren.SirenError` and carry `message`, `code`, and
 
 | HTTP status | Exception |
 |---|---|
-| 400 | `BadRequestError` |
+| 400 | `BadRequestError` (`.field_errors` when a field failed its check) |
 | 401 | `AuthenticationError` |
 | 403 | `PermissionError` |
 | 404 | `NotFoundError` |
 | 409 | `ConflictError` |
-| 422 | `ValidationError` (`.field_errors`) |
+| 422 | `ValidationError` (`.field_errors`), from the few routes that still use 422 |
 | 429 | `RateLimitError` (`.retry_after`) |
 | 5xx | `ApiError` |
 | network/timeout | `ConnectionError` |
