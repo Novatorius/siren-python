@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking
+
+- `events.refund()` takes a required keyword `refund_id`, the store's own id
+  for the refund, such as WooCommerce refund 2201, and sends it as `refundId`.
+  Siren now refuses a refund without one with 400. Siren records each refund
+  id once per order, so sending the same refund again is safe.
+
 ## [0.2.0] - 2026-10-19
 
 This is a minor bump, because the changes below break existing callers. Each

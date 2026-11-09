@@ -79,16 +79,24 @@ class Events:
             payload["items"] = [_normalize_line_item(item) for item in items]
         return self._post("sale", payload)
 
-    def refund(self, *, source: str, external_id: Union[str, int]) -> EventResult:
-        """Reverse a previously recorded sale (``POST /event/refund``).
+    def refund(
+        self, *, source: str, external_id: Union[str, int], refund_id: Union[str, int]
+    ) -> EventResult:
+        """Record a refund of a previously recorded sale (``POST /event/refund``).
 
-        The sale is matched by ``(external_id, source)``; both must match the
-        original sale exactly. Raises :class:`siren.NotFoundError` when no
+        The sale is matched by ``(external_id, source)``, and both must match
+        the original sale exactly. ``refund_id`` is the store's own id for
+        this refund, such as WooCommerce refund 2201. ``external_id`` names
+        the order and ``refund_id`` names one refund of it. Siren requires it
+        and records each refund id once per order, so sending the same refund
+        again is safe. Raises :class:`siren.NotFoundError` when no
         matching sale transaction exists, unless the organization's processing
         is paused. Then Siren queues the refund (``result.queued``) and checks
         the sale when it replays the queue.
         """
-        return self._post("refund", {"source": source, "externalId": external_id})
+        return self._post(
+            "refund", {"source": source, "externalId": external_id, "refundId": refund_id}
+        )
 
     def site_visited(
         self, *, collaborator_id: int, user_id: Optional[int] = None

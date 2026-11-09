@@ -120,12 +120,22 @@ class TestSale:
 
 
 class TestRefund:
+    def test_refund_id_is_required(self, client):
+        with pytest.raises(TypeError):
+            client.events.refund(source="stripe", external_id="cs_test_a1b2c3")  # type: ignore[call-arg]
+
     def test_payload_mapping(self, client, mocked_api):
         route = mocked_api.post("/event/refund").respond(200, headers={"X-Siren-OID": "8"})
 
-        result = client.events.refund(source="stripe", external_id="cs_test_a1b2c3")
+        result = client.events.refund(
+            source="stripe", external_id="cs_test_a1b2c3", refund_id="re_3Nf8a2"
+        )
 
-        assert _body(route) == {"source": "stripe", "externalId": "cs_test_a1b2c3"}
+        assert _body(route) == {
+            "source": "stripe",
+            "externalId": "cs_test_a1b2c3",
+            "refundId": "re_3Nf8a2",
+        }
         assert result.opportunity_id == 8
 
     def test_unknown_sale_raises_not_found(self, client, mocked_api):
@@ -135,7 +145,7 @@ class TestRefund:
         )
 
         with pytest.raises(siren.NotFoundError) as excinfo:
-            client.events.refund(source="stripe", external_id="nope")
+            client.events.refund(source="stripe", external_id="nope", refund_id="re_1")
 
         assert excinfo.value.status_code == 404
         assert excinfo.value.code == "not_found"
@@ -242,7 +252,7 @@ class TestEventOutcome:
     def test_empty_body_gives_empty_dict(self, client, mocked_api):
         mocked_api.post("/event/refund").respond(200)
 
-        result = client.events.refund(source="woo", external_id="1")
+        result = client.events.refund(source="woo", external_id="1", refund_id="2201")
 
         assert result.body == {}
         assert result.status is None

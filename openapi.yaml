@@ -730,10 +730,16 @@ components:
           example: 49.99
     RefundPayload:
       type: object
-      required: [source, externalId]
+      required: [source, externalId, refundId]
       properties:
         source: { type: string, minLength: 1, maxLength: 249, example: stripe }
         externalId: { type: [string, number], minLength: 1, maxLength: 32, example: cs_test_a1b2c3 }
+        refundId:
+          description: The store's own id for this refund, such as WooCommerce refund 2201. `externalId` names the order and `refundId` names one refund of it. Siren records each refund id once per order.
+          type: [string, number]
+          minLength: 1
+          maxLength: 191
+          example: re_3Nf8a2
     SiteVisitedPayload:
       type: object
       required: [collaboratorId]
