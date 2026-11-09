@@ -83,7 +83,9 @@ client.events.sale(
 Refunds and referred visits:
 
 ```python
-client.events.refund(source="stripe", external_id="cs_test_a1b2c3")
+# external_id names the order, refund_id names this refund (your store's id for it).
+# Siren requires refund_id and records each refund id once per order.
+client.events.refund(source="stripe", external_id="cs_test_a1b2c3", refund_id="re_3Nf8a2")
 client.events.site_visited(collaborator_id=88, user_id=12345)
 
 # Custom event types registered on your org:
@@ -272,7 +274,7 @@ Webhook verification failures raise `SignatureVerificationError`.
 
 ```python
 try:
-    client.events.refund(source="stripe", external_id="unknown")
+    client.events.refund(source="stripe", external_id="unknown", refund_id="re_1")
 except siren.NotFoundError:
     print("no matching sale")
 except siren.RateLimitError as err:
