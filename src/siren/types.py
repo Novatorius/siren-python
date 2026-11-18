@@ -91,6 +91,24 @@ class EventResult:
 
 
 @dataclass(frozen=True)
+class BrowserToken:
+    """A browser token for one custom event, from ``events.browser_token()``.
+
+    Hand all three values to the page. The page posts the event's data as
+    JSON to ``url`` with ``?access_token=`` set to ``token``, from a domain
+    the event allows. ``expires_in`` is the seconds the token has left.
+    """
+
+    token: str
+    expires_in: int
+    url: str
+
+    def to_dict(self) -> Dict[str, Any]:
+        """The JSON the browser token handler answers with: ``{token, expiresIn, url}``."""
+        return {"token": self.token, "expiresIn": self.expires_in, "url": self.url}
+
+
+@dataclass(frozen=True)
 class WebhookEvent:
     """A verified, parsed webhook delivery.
 

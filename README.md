@@ -85,10 +85,141 @@ Refunds and referred visits:
 ```python
 client.events.refund(source="stripe", external_id="cs_test_a1b2c3")
 client.events.site_visited(collaborator_id=88, user_id=12345)
-
-# Custom event types registered on your org:
-client.events.ingest("loyalty-points-earned", {"points": 120, "memberId": "m_9"})
 ```
+
+### Send an app's custom event
+
+A custom event belongs to one app, and Siren takes only that app's
+short-lived token at its address. Build the client with the app's key and
+send. The SDK trades the key for a token the first time, keeps it, gets a new
+one when fewer than two minutes of its 20 are left, and on a 401 gets a new
+one and sends once more. Threads that need a token at once share one request.
+You write no token code.
+
+<!-- readme-test: server-send -->
+```python
+import os
+
+import siren
+
+client = siren.Siren(
+    api_key=os.environ["SIREN_API_KEY"],  # the app's key
+    base_url=os.environ.get("SIREN_BASE_URL", "https://api.sirenaffiliates.com/siren/v1"),
+)
+
+result = client.events.ingest("signup-completed", {"collaboratorId": 12, "plan": "pro"})
+print(result.status)
+```
+
+`sale`, `refund`, `site_visited` and every other call keep sending the key. A
+key that belongs to no app sends custom events with the key.
+
+### Send a custom event from a browser
+
+A page never holds the app's key. It asks the app's own server for a browser
+token, which lasts ten minutes, works for one event only, and works only from
+a domain the event allows. Add the site's domain to the event in Siren first,
+because an event with no domains refuses every browser.
+
+Make the handler once, beside the client:
+
+<!-- readme-test: handler -->
+```python
+import os
+
+import siren
+
+client = siren.Siren(
+    api_key=os.environ["SIREN_API_KEY"],
+    base_url=os.environ.get("SIREN_BASE_URL", "https://api.sirenaffiliates.com/siren/v1"),
+)
+
+tokens = client.events.browser_token_handler(events=["signup-completed"])
+```
+
+Then mount it in one line. It needs no framework, and `tokens.wsgi` and
+`tokens.asgi` answer at whatever path you mount them on.
+
+FastAPI or Starlette:
+
+```python
+app.add_route("/siren/token", tokens.asgi, methods=["GET", "POST"])
+```
+
+Flask, through Werkzeug, which Flask ships with:
+
+```python
+from werkzeug.middleware.dispatcher import DispatcherMiddleware
+
+app.wsgi_app = DispatcherMiddleware(app.wsgi_app, {"/siren/token": tokens.wsgi})
+```
+
+Django, as a view, with `path("siren/token", siren_token)` in `urls.py`.
+Calling the handler with the body and query gives the status and JSON, which
+is also the way into any other framework:
+
+```python
+from django.http import JsonResponse
+from django.views.decorators.csrf import csrf_exempt
+
+
+@csrf_exempt
+def siren_token(request):
+    status, body = tokens(request.body, request.GET)
+    return JsonResponse(body, status=status)
+```
+
+Each reads the event from a JSON body `{"event": "..."}` or the query
+`?event=`, and answers:
+
+| Status | Body | When |
+|---|---|---|
+| 200 | `{"token", "expiresIn", "url"}` | Siren gave a browser token. |
+| 400 | `{"error"}` | The request names no event, names one outside `events`, or Siren refuses the event (the app has no such event, or it allows no domain). |
+| 502 | `{"error"}` | Siren can't be reached, or refuses the app's key. |
+
+The handler reuses one token per event until fewer than 60 seconds are left,
+so a busy page costs one grant every nine minutes or so.
+`client.events.browser_token("signup-completed")` gives the `BrowserToken`
+itself.
+
+The page asks for the token, then posts the event's data to `url` with the
+token in the query:
+
+```html
+<script>
+async function sirenTrack(event, data) {
+  const asked = await fetch('/siren/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ event }),
+  });
+  if (!asked.ok) return null;
+  const { token, url } = await asked.json();
+  const sent = await fetch(url + '?access_token=' + encodeURIComponent(token), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  return sent.ok ? sent.json() : null;
+}
+
+sirenTrack('signup-completed', { plan: 'pro' });
+</script>
+```
+
+A page built with JavaScript tools can use `track()` from
+`@novatorius/siren/storefront`, which keeps the token and tries once more
+after a 401.
+
+This keeps other websites from firing the event from their visitors'
+browsers, and a leaked token dies within minutes. It does not stop a script
+outside a browser, which can send any `Origin`, and anyone who fetches a
+token from your page can send that event for ten minutes. A browser send
+carries whatever the page's script puts in it, so don't let a page name who
+gets credit unless you check it on your server.
+
+The [examples](examples) folder holds each of these as a file.
 
 ### Verify a webhook
 
@@ -168,6 +299,9 @@ client.webhooks.subscriptions.delete(subscription.id)
 
 - **Event ingestion** — `events.sale`, `events.refund`, `events.site_visited`,
   and `events.ingest` for custom event types.
+- **App tokens** — `events.ingest` trades the app's key for a short-lived
+  token and keeps it fresh, and `events.browser_token_handler()` gives a page
+  a browser token for one event, as a plain call, a WSGI app or an ASGI app.
 - **One-call webhook verification** — `webhooks.construct_event` verifies the
   HMAC-SHA256 signature in constant time and parses the payload.
 - **Subscription management** — create, list, and delete subscriptions with an
@@ -190,7 +324,7 @@ names each one:
 
 | Scope | What the key can do |
 |---|---|
-| `ApiKeyScope.ALL_EVENTS` (`event:*`), `event_scope(slug)` | Send events |
+| `ApiKeyScope.ALL_EVENTS` (`event:*`), `event_scope(slug)` | Send built-in events. A custom event takes only its app's token, which the SDK gets from the app's key. |
 | `ApiKeyScope.LEDGER_CONVERSIONS_READ` (`ledger:conversions:read`) | `conversions.list()` |
 | `ApiKeyScope.LEDGER_TRANSACTIONS_READ` (`ledger:transactions:read`) | `transactions.list()` |
 | `ApiKeyScope.LEDGER_OBLIGATIONS_READ` (`ledger:obligations:read`) | `obligations.list()` |

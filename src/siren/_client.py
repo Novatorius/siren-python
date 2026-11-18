@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from typing import Any, Mapping, Optional
+from typing import Any, Mapping, Optional, Union
 
 import httpx
 
@@ -38,6 +38,7 @@ class HttpClient:
             raise ValueError("api_key is required (an sk_live_... key)")
         self.base_url = base_url.rstrip("/")
         self.max_retries = max(0, int(max_retries))
+        self.api_key = api_key
         self._client = httpx.Client(
             base_url=self.base_url,
             timeout=timeout,
@@ -59,15 +60,25 @@ class HttpClient:
         json: Optional[Any] = None,
         params: Optional[Mapping[str, Any]] = None,
         retryable: bool = True,
+        bearer: Union[str, bool, None] = None,
     ) -> httpx.Response:
-        """Perform a request, raising a typed :class:`SirenError` on failure."""
+        """Perform a request, raising a typed :class:`SirenError` on failure.
+
+        ``bearer`` sends that token in place of the key, or with ``False``
+        sends no ``Authorization`` header at all.
+        """
         attempts = (self.max_retries + 1) if retryable else 1
         error: SirenError
 
         for attempt in range(attempts):
             response: Optional[httpx.Response]
             try:
-                response = self._client.request(method, path, json=json, params=params)
+                request = self._client.build_request(method, path, json=json, params=params)
+                if bearer is False:
+                    del request.headers["Authorization"]
+                elif isinstance(bearer, str):
+                    request.headers["Authorization"] = f"Bearer {bearer}"
+                response = self._client.send(request)
             except httpx.HTTPError as exc:
                 response = None
                 error = ConnectionError(f"Request to Siren API failed: {exc}")

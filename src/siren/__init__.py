@@ -14,6 +14,7 @@ Quickstart::
 """
 
 from ._version import __version__
+from .browser_tokens import BrowserTokenHandler
 from .client import Siren
 from .errors import (
     ApiError,
@@ -35,6 +36,7 @@ from .errors import (
 from .scopes import LEDGER_READ_SCOPES, ApiKeyScope, event_scope
 from .types import (
     ApiKey,
+    BrowserToken,
     EventResult,
     ListPage,
     WebhookEvent,
@@ -45,6 +47,7 @@ from .types import (
 __all__ = [
     "__version__",
     "Siren",
+    "BrowserTokenHandler",
     # Errors
     "SirenError",
     "BadRequestError",
@@ -67,6 +70,7 @@ __all__ = [
     "event_scope",
     # Types
     "ApiKey",
+    "BrowserToken",
     "EventResult",
     "ListPage",
     "WebhookEvent",

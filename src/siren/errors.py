@@ -253,7 +253,13 @@ def error_from_response(response: Any) -> SirenError:
     data: Optional[Any] = None
 
     error = body.get("error") if isinstance(body, dict) else None
-    if isinstance(error, str):
+    description = body.get("error_description") if isinstance(body, dict) else None
+    if isinstance(error, str) and error and isinstance(description, str):
+        # The token route uses the OAuth envelope (RFC 6749, section 5.2):
+        # ``error`` is the code and ``error_description`` the message.
+        message = description or error
+        code = error
+    elif isinstance(error, str):
         message = error or fallback
     elif isinstance(error, dict):
         message = error.get("message") or fallback
