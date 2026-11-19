@@ -1,0 +1,19 @@
+<script>
+async function sirenTrack(event, data) {
+  const asked = await fetch('/siren/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ event }),
+  });
+  if (!asked.ok) return null;
+  const { token, url } = await asked.json();
+  const sent = await fetch(url + '?access_token=' + encodeURIComponent(token), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  return sent.ok ? sent.json() : null;
+}
+
+sirenTrack('signup-completed', { collaboratorId: 12, plan: 'pro' });
+</script>

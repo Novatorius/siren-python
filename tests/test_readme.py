@@ -14,18 +14,21 @@ import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 from wsgiref.simple_server import WSGIRequestHandler, make_server
 
 import httpx
 import pytest
 
+import siren
+
 ROOT = Path(__file__).resolve().parent.parent
 APP_KEY = "sk_test_fake_app_key"
 
 
-def snippet(name: str) -> str:
+def snippet(name: str, language: str = "python") -> str:
     readme = (ROOT / "README.md").read_text()
-    found = re.search(r"<!-- readme-test: " + re.escape(name) + r" -->\n```python\n(.*?)```", readme, re.S)
+    found = re.search(r"<!-- readme-test: " + re.escape(name) + r" -->\n```" + language + r"\n(.*?)```", readme, re.S)
     assert found, f"README has no snippet named {name}"
     return found.group(1)
 
@@ -41,6 +44,9 @@ class FakeSiren(BaseHTTPRequestHandler):
         raw = self.rfile.read(length) if length else b""
         body = json.loads(raw) if raw else {}
         auth = self.headers.get("Authorization", "")
+        url = urlsplit(self.path)
+        query = parse_qs(url.query)
+        self.path = url.path
         FakeSiren.seen.append((self.path, auth, body))
 
         if self.path == "/siren/v1/oauth/token":
@@ -55,8 +61,16 @@ class FakeSiren(BaseHTTPRequestHandler):
 
         match = re.fullmatch(r"/siren/v1/event/([^/?]+)", self.path)
         if match:
-            if auth != "Bearer srv.fake-token":
+            # A server send carries the server token as a bearer, and a
+            # browser send carries the browser token as ?access_token=.
+            if auth != "Bearer srv.fake-token" and query.get("access_token") != ["brw.fake-token"]:
                 return self._json(401, {"error": "This access token has expired."})
+            # Siren reads the collaborator who gets credit from the top of
+            # the body (CustomEventIngestion::ingest()).
+            if "collaboratorId" not in body:
+                return self._json(
+                    400, {"error": {"message": "collaboratorId is required", "context": {"type": "VALIDATION_FAILED"}}}
+                )
             return self._json(200, {"status": "recorded"}, {"X-Siren-OID": "9001"})
 
         return self._json(404, {"error": "Unknown route"})
@@ -180,3 +194,23 @@ def test_the_examples_folder_holds_the_readme_code():
         source = (ROOT / "examples" / name).read_text()
         assert "client.events.browser_token_handler(" in source, name
         compile(source, name, "exec")
+
+
+def test_the_page_snippet_sends_a_body_siren_accepts(siren_url):
+    page = snippet("page", "html")
+    assert (ROOT / "examples" / "page.html").read_text() == page
+    call = re.search(r"sirenTrack\('([\w-]+)', (\{.*?\})\);", page)
+    assert call, "The page snippet calls sirenTrack()."
+    # The page's object literal, as JSON: quote the keys and the strings.
+    literal = re.sub(r"([{,]\s*)(\w+):", r'\1"\2":', call.group(2))
+    data = json.loads(re.sub(r"'([^']*)'", r'"\1"', literal))
+
+    with siren.Siren(api_key=APP_KEY, base_url=siren_url) as client:
+        token = client.events.browser_token(call.group(1))
+    send = f"{token.url}?access_token={token.token}"
+
+    accepted = httpx.post(send, json=data)
+    assert (accepted.status_code, accepted.json().get("status")) == (200, "recorded"), "Siren takes the body the README page sends."
+
+    data.pop("collaboratorId")
+    assert httpx.post(send, json=data).status_code == 400, "The fake refuses a body with no collaboratorId, as Siren does."
