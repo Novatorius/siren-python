@@ -297,6 +297,46 @@ client.webhooks.subscriptions.list()
 client.webhooks.subscriptions.delete(subscription.id)
 ```
 
+### Answer Siren's request to your app
+
+An app's feature, such as a payout method or a distribution resolver, gets
+requests from Siren at the app's address. Siren signs each one with the app's
+signing secret. Check it with `apps.verify_request()`, then answer an ask
+with `apps.requests.answer()`, using a client made with the app's own key.
+
+```python
+import siren
+
+client = siren.Siren(api_key=APP_API_KEY)
+
+
+def siren_request(raw_body: bytes, headers) -> None:
+    request = client.apps.verify_request(raw_body, headers, APP_SIGNING_SECRET)
+    if not request.is_ask:
+        return
+    receipt = client.apps.requests.answer(request.id, {"outcome": "paid", "reference": "TX-1"})
+    if receipt.duplicate:
+        print("Siren already had this answer.")
+```
+
+`verify_request()` reads nothing over the network. It checks, in this order,
+that `X-Siren-Event` is `app.request` when present, that
+`X-Siren-Signature-V2` (`t=<seconds>,v1=<hex>`) signs `"{t}."` and the raw
+body, that `X-Siren-Timestamp` matches `t`, that `t` is within
+`tolerance_seconds` of the clock (300 by default, at most 3600), and that the
+body is an app request of version 1. Each failure raises
+`SignatureVerificationError` with the reason. Pass the body exactly as
+received. Siren may send one request more than once, so drop a repeat by
+`request.id`.
+
+`answer()` sends `POST /apps/requests/{id}/answer` once and never retries
+it. It raises `ValueError` before sending for an id that is not a request
+key, an answer that is not a mapping, one with no text `outcome`, and one over
+16384 bytes as JSON. A different second answer raises `ConflictError` with
+code `app_request_already_answered`, and the first answer stands. When Siren
+takes no answer from the key, `AuthenticationError` carries
+`ErrorCode.APP_ANSWER_UNAUTHORIZED`.
+
 ## Features
 
 - **Event ingestion** — `events.sale`, `events.refund`, `events.site_visited`,

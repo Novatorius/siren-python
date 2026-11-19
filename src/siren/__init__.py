@@ -36,6 +36,8 @@ from .errors import (
 from .scopes import LEDGER_READ_SCOPES, ApiKeyScope, event_scope
 from .types import (
     ApiKey,
+    AppAnswerReceipt,
+    AppRequest,
     BrowserToken,
     EventResult,
     ListPage,
@@ -70,6 +72,8 @@ __all__ = [
     "event_scope",
     # Types
     "ApiKey",
+    "AppAnswerReceipt",
+    "AppRequest",
     "BrowserToken",
     "EventResult",
     "ListPage",

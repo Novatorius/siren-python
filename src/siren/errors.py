@@ -34,6 +34,12 @@ class ErrorCode:
     #: :class:`StoreKeyNotAllowedError`.
     STORE_KEY_NOT_ALLOWED = "store_key_not_allowed"
 
+    #: 401: Siren takes no answer to an app's request from this key. An app
+    #: answers with its own key. The SDK also gives this code to the uncoded
+    #: 401 Siren's key check sends on the answer route.
+    #: :class:`AuthenticationError`.
+    APP_ANSWER_UNAUTHORIZED = "app_answer_unauthorized"
+
 
 class SirenError(Exception):
     """Base class for every error raised by the Siren SDK."""

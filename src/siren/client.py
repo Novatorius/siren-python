@@ -11,6 +11,7 @@ from ._client import (
     HttpClient,
 )
 from .api_keys import ApiKeys
+from .apps import Apps
 from .events import Events
 from .reconciliation import Conversions, Obligations, Payouts, Transactions
 from .webhooks import Webhooks
@@ -61,6 +62,7 @@ class Siren:
         )
         self.events = Events(self._client)
         self.webhooks = Webhooks(self._client)
+        self.apps = Apps(self._client)
         self.api_keys = ApiKeys(self._client)
         self.conversions = Conversions(self._client)
         self.transactions = Transactions(self._client)

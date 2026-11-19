@@ -124,6 +124,50 @@ class WebhookEvent:
     raw: Dict[str, Any] = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class AppRequest:
+    """A request Siren signed and sent an app, as ``apps.verify_request()``
+    returns it once the signature, the time and the envelope check out.
+
+    Siren may deliver one request more than once, so drop a repeat by ``id``,
+    the request key, the same on every send. ``mode`` is ``tell``, which
+    waits for no answer, or ``ask``, answered with ``apps.requests.answer()``
+    by ``answer_by``. ``item`` holds the feature's ``kind``, ``key`` and
+    ``app:{n}`` ``id``. ``data`` is the question. ``timestamp`` is the Unix
+    time Siren signed the send at. ``delivery_id`` is the
+    ``X-Siren-Delivery`` header, one per send. ``raw`` holds the whole body.
+    """
+
+    version: int
+    id: str
+    type: str
+    mode: str
+    app: str
+    item: Dict[str, Any]
+    created_at: str
+    answer_by: Optional[str]
+    answer_url: Optional[str]
+    data: Dict[str, Any]
+    timestamp: int
+    delivery_id: Optional[str] = None
+    raw: Dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def is_ask(self) -> bool:
+        """Whether Siren waits for an answer to this request."""
+        return self.mode == "ask"
+
+
+@dataclass(frozen=True)
+class AppAnswerReceipt:
+    """Siren's receipt for an app's answer. Siren took it and applies it on
+    its own. ``duplicate`` is true when Siren already held this same answer,
+    so it changed nothing."""
+
+    status: str
+    duplicate: bool
+
+
 def _created_at(payload: Dict[str, Any]) -> Optional[str]:
     """Siren names a record's creation time ``dateCreated``."""
     value = payload.get("dateCreated")

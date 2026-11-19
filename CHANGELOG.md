@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `apps.verify_request(raw_body, headers, secret, *, tolerance_seconds, now)`
+  checks a request Siren signed and sent an app and returns an `AppRequest`.
+  It checks `X-Siren-Event`, the `X-Siren-Signature-V2` signature over
+  `"{t}."` and the raw body, `X-Siren-Timestamp`, a replay window of 300
+  seconds by default (at most 3600), and the version 1 envelope, and raises
+  `SignatureVerificationError` with the reason. It reads nothing over the
+  network.
+- `apps.requests.answer(request_id, answer)` sends an ask's answer once with
+  `POST /apps/requests/{id}/answer` and returns an `AppAnswerReceipt`. It
+  raises `ValueError` before sending for a bad id, an answer with no text
+  `outcome`, and one over 16384 bytes of JSON, and gives Siren's uncoded 401
+  the code `ErrorCode.APP_ANSWER_UNAUTHORIZED`.
+
 ## [0.2.0] - 2026-10-19
 
 This is a minor bump, because the changes below break existing callers. Each
