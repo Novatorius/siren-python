@@ -111,6 +111,14 @@ def test_a_signed_time_outside_the_tolerance_is_refused_as_a_replay(client, sign
         client.apps.verify_request(body, headers, secret, now=t + 301)
 
 
+def test_a_signed_time_ahead_of_the_clock_by_more_than_the_tolerance_is_refused(client, signed):
+    body, headers, secret, t = signed
+
+    assert client.apps.verify_request(body, headers, secret, now=t - 300).timestamp == t
+    with pytest.raises(siren.SignatureVerificationError, match="more than 300 seconds"):
+        client.apps.verify_request(body, headers, secret, now=t - 301)
+
+
 @pytest.mark.parametrize(
     "kwargs",
     [
