@@ -417,7 +417,8 @@ class AppPayoutRef(TypedDict):
 class AppPayoutCollaborator(TypedDict):
     id: int
     name: str
-    email: str
+    #: None when the collaborator has no email address.
+    email: Optional[str]
 
 
 class AppPayoutQuestion(TypedDict):
