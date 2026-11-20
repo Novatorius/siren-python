@@ -45,7 +45,9 @@ Documentation = "https://sirenaffiliates.com"
 Issues = "https://github.com/Novatorius/siren-python/issues"
 
 [project.optional-dependencies]
-dev = ["pytest>=7.0", "respx>=0.21", "build>=1.0"]
+# Flask and Django test the request handler's faces. The SDK itself
+# imports neither unless that face is used.
+dev = ["pytest>=7.0", "respx>=0.21", "build>=1.0", "flask>=2.2", "django>=4.2"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/siren"]

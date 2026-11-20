@@ -14,6 +14,7 @@ Quickstart::
 """
 
 from ._version import __version__
+from .app_requests import AppRequestHandler, AppRequestReply
 from .browser_tokens import BrowserTokenHandler
 from .client import Siren
 from .errors import (
@@ -36,8 +37,19 @@ from .errors import (
 from .scopes import LEDGER_READ_SCOPES, ApiKeyScope, event_scope
 from .types import (
     ApiKey,
+    AppAllocationActionData,
+    AppAmount,
     AppAnswerReceipt,
+    AppConversionActionData,
+    AppCurrency,
+    AppDistributionAnswer,
+    AppDistributionMetric,
+    AppDistributionPool,
+    AppDistributionQuestion,
     AppRequest,
+    AppRewardAnswer,
+    AppRewardConversion,
+    AppRewardQuestion,
     BrowserToken,
     EventResult,
     ListPage,
@@ -50,6 +62,8 @@ __all__ = [
     "__version__",
     "Siren",
     "BrowserTokenHandler",
+    "AppRequestHandler",
+    "AppRequestReply",
     # Errors
     "SirenError",
     "BadRequestError",
@@ -72,8 +86,19 @@ __all__ = [
     "event_scope",
     # Types
     "ApiKey",
+    "AppAllocationActionData",
+    "AppAmount",
     "AppAnswerReceipt",
+    "AppConversionActionData",
+    "AppCurrency",
+    "AppDistributionAnswer",
+    "AppDistributionMetric",
+    "AppDistributionPool",
+    "AppDistributionQuestion",
     "AppRequest",
+    "AppRewardAnswer",
+    "AppRewardConversion",
+    "AppRewardQuestion",
     "BrowserToken",
     "EventResult",
     "ListPage",

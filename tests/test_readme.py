@@ -193,6 +193,7 @@ def test_the_examples_folder_holds_the_readme_code():
     for name in ("fastapi_app.py", "flask_app.py", "django_views.py"):
         source = (ROOT / "examples" / name).read_text()
         assert "client.events.browser_token_handler(" in source, name
+        assert "client.apps.request_handler(" in source and "@answers.on(" in source, name
         compile(source, name, "exec")
 
 

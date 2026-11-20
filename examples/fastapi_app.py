@@ -1,4 +1,5 @@
-"""The browser token address in FastAPI. Run with: uvicorn fastapi_app:app"""
+"""The browser token address and Siren's request handler in FastAPI.
+Run with: uvicorn fastapi_app:app"""
 
 import os
 
@@ -11,6 +12,17 @@ client = siren.Siren(
 )
 
 tokens = client.events.browser_token_handler(events=["signup-completed"])
+answers = client.apps.request_handler(os.environ["SIREN_SIGNING_SECRET"])
+
+
+@answers.on("incentiveResolver", "split-the-reward")
+async def split_the_reward(request):
+    # An async def function is awaited after the 200 goes back.
+    pool, conversions = request.data["pool"], request.data["conversions"]
+    rewards = client.apps.split_pool(pool, {c["conversionId"]: c["score"] for c in conversions})
+    return {"outcome": "rewards", "units": pool["units"], "rewards": rewards}
+
 
 app = FastAPI()
+app.add_route("/siren", answers.asgi, methods=["POST"])
 app.add_route("/siren/token", tokens.asgi, methods=["GET", "POST"])
