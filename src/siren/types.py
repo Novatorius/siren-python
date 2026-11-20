@@ -142,6 +142,15 @@ class AppItemKind(str, Enum):
     with the pool's units and every conversion id of the question, each a
     whole number of 0 or more or ``None``. The rewards wait for the answer,
     24 hours from the first ask at most.
+
+    An engagement calculation (``ENGAGEMENT_CALCULATION``) answers who earns
+    an engagement and its score, ``{"outcome": "engagements", "results":
+    [{"collaboratorId": 7, "score": 10}]}``, with the same limits as a metric
+    calculation. An empty list makes no engagement. An engagement filter
+    (``ENGAGEMENT_FILTER``) answers ``{"outcome": "allow"}``, or
+    ``{"outcome": "suppress", "reason": "..."}`` with a plain text reason of
+    1 to 200 characters, which Siren notes on the opportunity. Siren makes no
+    engagement until the answer, 24 hours from the first ask at most.
     """
 
     POST_CONVERSION_ACTION = "postConversionAction"
@@ -152,6 +161,8 @@ class AppItemKind(str, Enum):
     METRIC_CALCULATION = "metricCalculation"
     METRIC_FILTER = "metricFilter"
     INCENTIVE_RESOLVER = "incentiveResolver"
+    ENGAGEMENT_CALCULATION = "engagementCalculation"
+    ENGAGEMENT_FILTER = "engagementFilter"
 
     def __str__(self) -> str:
         return self.value
@@ -400,6 +411,59 @@ class AppRewardAnswer(TypedDict):
     outcome: str
     units: str
     rewards: Dict[str, Optional[int]]
+
+
+class AppEngagementCause(TypedDict):
+    """The trigger behind an engagement ask. ``id`` is the trigger's own
+    random id, ``event`` the engagement type that fired, and ``occurredAt``
+    an ISO 8601 time that dates the engagements the answer makes."""
+
+    id: str
+    event: str
+    occurredAt: str
+
+
+class AppEngagementCalculationQuestion(TypedDict):
+    """``engagementCalculation`` (an ask): who earns an engagement, and its
+    score, when a program's engagement type triggers. ``args`` holds the
+    settings a person gave the engagement type, as text by name.
+    ``opportunity["customerId"]`` is the customer Siren matched, or ``None``."""
+
+    program: Dict[str, Any]
+    engagementType: str
+    programEngagementTypeId: int
+    args: Dict[str, str]
+    opportunity: Dict[str, Any]
+    triggeringCollaborator: Dict[str, Any]
+    cause: AppEngagementCause
+
+
+class AppEngagementCalculationAnswer(TypedDict):
+    """Who earns an engagement and its score, at most 50 results, each
+    collaborator once and each score a whole number of 0 or more.
+    ``outcome`` is ``engagements``."""
+
+    outcome: str
+    results: List[Dict[str, int]]
+
+
+class AppEngagementFilterQuestion(TypedDict):
+    """``engagementFilter`` (an ask): whether an engagement may be made for
+    ``collaborator`` on ``program``."""
+
+    program: Dict[str, Any]
+    collaborator: Dict[str, Any]
+    opportunity: Dict[str, Any]
+    engagementType: str
+    cause: AppEngagementCause
+
+
+class AppEngagementFilterAnswer(TypedDict, total=False):
+    """``outcome`` is ``allow`` or ``suppress``. A suppress gives a plain
+    text ``reason`` of 1 to 200 characters."""
+
+    outcome: str
+    reason: str
 
 
 class AppConversionActionData(TypedDict):
