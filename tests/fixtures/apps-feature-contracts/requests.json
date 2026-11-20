@@ -1,0 +1,145 @@
+{
+  "about": "What Siren sends an app for each feature kind the dashboard offers, and the answer it takes. tests/Apps/Service/Services/AppFeatureContractsTest.php builds each request with Siren's own builders and checks it equals this file. frontend/src/platform/saas/apps/featureContracts.test.ts checks the feature page's examples equal this file. Change the builders, and both tests fail until this file and the page agree again.",
+  "app": "acme-crm",
+  "origin": "https://cloud.example.com",
+  "apiBase": "https://cloud.example.com/siren/v1",
+  "requestKey": "apr_9c60190a4501399d0ae55f041c237b39",
+  "createdAt": "2026-11-17T12:20:03+00:00",
+  "delivery": {
+    "headers": [
+      "Content-Type: application/json",
+      "X-Siren-Signature: sha256=<hex HMAC-SHA256 of the body>",
+      "X-Siren-Event: app.request",
+      "X-Siren-Delivery: apr_9c60190a4501399d0ae55f041c237b39.1",
+      "User-Agent: Siren-Webhooks/1.0",
+      "X-Siren-Timestamp: 1794918003",
+      "X-Siren-Signature-V2: t=1794918003,v1=<hex HMAC-SHA256 of \"1794918003.<body>\">",
+      "Idempotency-Key: apr_9c60190a4501399d0ae55f041c237b39"
+    ],
+    "timeoutSeconds": 8,
+    "attempts": 5,
+    "askSends": 3
+  },
+  "kinds": {
+    "incentiveResolver": {
+      "item": { "key": "split-the-reward", "id": "app:10" },
+      "request": {
+        "version": 1,
+        "id": "apr_9c60190a4501399d0ae55f041c237b39",
+        "type": "app.request",
+        "mode": "ask",
+        "app": "acme-crm",
+        "item": { "kind": "incentiveResolver", "key": "split-the-reward", "id": "app:10" },
+        "createdAt": "2026-11-17T12:20:03+00:00",
+        "answerBy": "2026-11-17T13:20:03+00:00",
+        "answerUrl": "https://cloud.example.com/siren/v1/apps/requests/apr_9c60190a4501399d0ae55f041c237b39/answer",
+        "data": {
+          "reason": "sale",
+          "program": { "id": 3, "name": "Partner program", "status": "active" },
+          "conversionType": "sale",
+          "transaction": {
+            "id": 3307,
+            "units": "USD",
+            "currency": { "id": "USD", "symbol": "$", "position": "before", "name": "US Dollar", "scale": 2, "decimalPlaces": 2, "type": "monetary" }
+          },
+          "pool": {
+            "value": 1500,
+            "units": "USD",
+            "currency": { "id": "USD", "symbol": "$", "position": "before", "name": "US Dollar", "scale": 2, "decimalPlaces": 2, "type": "monetary" }
+          },
+          "conversions": [
+            { "conversionId": 1042, "engagementId": 880, "collaboratorId": 42, "collaboratorStatus": "active", "score": 60, "engagementCreatedDate": "2026-11-02T09:15:00+00:00" },
+            { "conversionId": 1043, "engagementId": 881, "collaboratorId": 57, "collaboratorStatus": "active", "score": 40, "engagementCreatedDate": "2026-11-09T16:40:00+00:00" }
+          ]
+        }
+      },
+      "answer": { "outcome": "rewards", "units": "USD", "rewards": { "1042": 900, "1043": 600 } }
+    },
+    "postConversionAction": {
+      "item": { "key": "tell-the-crm", "id": "app:7" },
+      "request": {
+        "version": 1,
+        "id": "apr_9c60190a4501399d0ae55f041c237b39",
+        "type": "app.request",
+        "mode": "tell",
+        "app": "acme-crm",
+        "item": { "kind": "postConversionAction", "key": "tell-the-crm", "id": "app:7" },
+        "createdAt": "2026-11-17T12:20:03+00:00",
+        "data": {
+          "conversion": {
+            "id": 1042,
+            "type": "sale",
+            "status": "complete",
+            "engagementId": 880,
+            "opportunityId": 615,
+            "collaboratorId": 42,
+            "transactionId": 3307,
+            "obligationId": 2210
+          },
+          "reward": {
+            "value": 1500,
+            "units": "USD",
+            "currency": { "id": "USD", "symbol": "$", "position": "before", "name": "US Dollar", "scale": 2, "decimalPlaces": 2, "type": "monetary" }
+          },
+          "program": { "id": 3, "name": "Partner program" }
+        }
+      },
+      "answer": null
+    },
+    "postAllocationAction": {
+      "item": { "key": "note-the-share", "id": "app:8" },
+      "request": {
+        "version": 1,
+        "id": "apr_9c60190a4501399d0ae55f041c237b39",
+        "type": "app.request",
+        "mode": "tell",
+        "app": "acme-crm",
+        "item": { "kind": "postAllocationAction", "key": "note-the-share", "id": "app:8" },
+        "createdAt": "2026-11-17T12:20:03+00:00",
+        "data": {
+          "allocation": {
+            "distributionId": 21,
+            "obligationId": 2290,
+            "collaboratorId": 42,
+            "status": "complete",
+            "value": 6000,
+            "units": "USD",
+            "currency": { "id": "USD", "symbol": "$", "position": "before", "name": "US Dollar", "scale": 2, "decimalPlaces": 2, "type": "monetary" }
+          },
+          "distributor": { "id": 2, "name": "Partner pool" }
+        }
+      },
+      "answer": null
+    },
+    "distributionResolver": {
+      "item": { "key": "split-by-score", "id": "app:9" },
+      "request": {
+        "version": 1,
+        "id": "apr_9c60190a4501399d0ae55f041c237b39",
+        "type": "app.request",
+        "mode": "ask",
+        "app": "acme-crm",
+        "item": { "kind": "distributionResolver", "key": "split-by-score", "id": "app:9" },
+        "createdAt": "2026-11-17T12:20:03+00:00",
+        "answerBy": "2026-11-17T13:20:03+00:00",
+        "answerUrl": "https://cloud.example.com/siren/v1/apps/requests/apr_9c60190a4501399d0ae55f041c237b39/answer",
+        "data": {
+          "distribution": { "id": 21, "distributorId": 2, "periodStart": "2026-10-01T00:00:00+00:00", "periodEnd": "2026-11-01T00:00:00+00:00" },
+          "distributor": { "id": 2, "name": "Partner pool" },
+          "pool": {
+            "value": 10000,
+            "total": 10000,
+            "paid": 0,
+            "units": "USD",
+            "currency": { "id": "USD", "symbol": "$", "position": "before", "name": "US Dollar", "scale": 2, "decimalPlaces": 2, "type": "monetary" }
+          },
+          "metrics": [
+            { "metricId": 41, "collaboratorId": 42, "score": 30, "triggerCount": 3 },
+            { "metricId": 43, "collaboratorId": 57, "score": 20, "triggerCount": 2 }
+          ]
+        }
+      },
+      "answer": { "outcome": "allocated", "units": "USD", "shares": { "41": 6000, "43": 4000 } }
+    }
+  }
+}
