@@ -124,6 +124,29 @@ class WebhookEvent:
     raw: Dict[str, Any] = field(default_factory=dict)
 
 
+class AppItemKind(str, Enum):
+    """The kinds of feature an app can add, as Siren stores an item's
+    ``kind`` and sends it in an app request's ``item["kind"]``.
+
+    An incentive resolver (``INCENTIVE_RESOLVER``) splits a program's reward
+    among the collaborators a sale converted. It answers
+    ``{"outcome": "rewards", "units": "USD", "rewards": {"1042": 900, "1043": None}}``,
+    with the pool's units and every conversion id of the question, each a
+    whole number of 0 or more or ``None``. The rewards wait for the answer,
+    24 hours from the first ask at most.
+    """
+
+    POST_CONVERSION_ACTION = "postConversionAction"
+    POST_ALLOCATION_ACTION = "postAllocationAction"
+    PAYOUT_METHOD = "payoutMethod"
+    DISTRIBUTION_RESOLVER = "distributionResolver"
+    CUSTOM_EVENT = "customEvent"
+    INCENTIVE_RESOLVER = "incentiveResolver"
+
+    def __str__(self) -> str:
+        return self.value
+
+
 @dataclass(frozen=True)
 class AppRequest:
     """A request Siren signed and sent an app, as ``apps.verify_request()``

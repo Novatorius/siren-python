@@ -337,6 +337,38 @@ code `app_request_already_answered`, and the first answer stands. When Siren
 takes no answer from the key, `AuthenticationError` carries
 `ErrorCode.APP_ANSWER_UNAUTHORIZED`.
 
+`AppItemKind` names each kind as `request.item["kind"]` carries it. The SDK
+checks only what every answer needs, so Siren checks the rest of each kind's
+answer and refuses one that doesn't fit with 422. An incentive resolver
+(`AppItemKind.INCENTIVE_RESOLVER`) splits a program's reward among the
+collaborators a sale, renewal or lead converted. Its question holds the
+`program`, the `conversionType`, the `transaction` (`None` for a lead), the
+reward `pool` as a stored whole number, and the `conversions`, each with its
+engagement `score`. `reason` is `sale`, or `refund` when a partial refund asks
+again about rewards already made. The answer gives the pool's `units`, and in
+`rewards` every `conversionId` of the question as text, each a whole number of
+0 or more or `None` for a collaborator who earns nothing. The rewards may add
+up to more than the pool.
+
+The rewards wait for the answer, 24 hours from the first ask about a sale at
+most. Then Siren stops waiting: a sale's collaborators get no reward, and a
+refund cuts the rewards already made by the share refunded. An answer after
+that raises `ConflictError` with code `app_request_dropped`.
+
+```python
+from siren import AppItemKind
+
+if request.is_ask and request.item["kind"] == AppItemKind.INCENTIVE_RESOLVER:
+    pool = request.data["pool"]
+    conversions = request.data["conversions"]
+    total = sum(conversion["score"] for conversion in conversions)
+    rewards = {
+        str(conversion["conversionId"]): pool["value"] * conversion["score"] // total if total > 0 else None
+        for conversion in conversions
+    }
+    client.apps.requests.answer(request.id, {"outcome": "rewards", "units": pool["units"], "rewards": rewards})
+```
+
 ## Features
 
 - **Event ingestion** — `events.sale`, `events.refund`, `events.site_visited`,
