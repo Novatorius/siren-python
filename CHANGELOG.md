@@ -40,6 +40,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the app split each sale's reward. The README shows the answer each of the
   three takes, and the 409 `app_request_dropped` Siren answers once it stopped
   waiting, 24 hours after the first ask about a sale.
+- `AppPayoutQuestion` and `AppPayoutAnswer` (`AppPayoutPaid` or `AppPayoutFailed`) type the payout
+  method ask's `data` and its answer. The README shows how to answer a payout ask and says the app
+  pays each payout id at most once.
 - `apps.verify_request(raw_body, headers, secret, *, tolerance_seconds, now)`
   checks a request Siren signed and sent an app and returns an `AppRequest`.
   It checks `X-Siren-Event`, the `X-Siren-Signature-V2` signature over

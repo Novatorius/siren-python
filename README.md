@@ -418,6 +418,33 @@ dollars, a yen for yen), rounded down so the sum never passes
 of each kind have types, such as `siren.AppDistributionQuestion` and
 `siren.AppRewardAnswer`.
 
+A payout method (`AppItemKind.PAYOUT_METHOD`) is asked to pay one payout. Its
+question, `siren.AppPayoutQuestion`, holds the `payout` (`id`, `fulfillmentId`
+and `attempt`), the `amount` to pay as a stored whole number in the currency's
+smallest unit, and the `collaborator` (`id`, `name` and `email`). `attempt`
+starts at 1 and rises when Siren asks again about the same payout, such as
+after a failed answer and a retry. The answer, `siren.AppPayoutAnswer`, is
+`{"outcome": "paid", "reference": ...}`, where the reference is 1 to 191
+characters, the payment's id in the app's own system, or
+`{"outcome": "failed", "reason": ...}`, where the reason is 1 to 500
+characters.
+
+This moves money, so the app pays each payout id at most once. When Siren asks
+again about a payout the app already paid, the app answers `paid` with the
+first reference and pays nothing more. Siren drops an ask after 24 hours with
+no answer and marks the payout failed. An answer after that raises
+`ConflictError` with code `app_request_dropped`.
+
+```python
+@answers.on("payoutMethod", "acme-ledger")
+def pay(request):
+    payout, amount = request.data["payout"], request.data["amount"]
+    reference = ledger.pay_once(str(payout["id"]), amount["value"], request.data["collaborator"]["email"])
+    if reference is None:
+        return {"outcome": "failed", "reason": "The account is closed."}
+    return {"outcome": "paid", "reference": reference}
+```
+
 #### Check and answer by hand
 
 An app that queues the work, or answers after a person decides, checks a

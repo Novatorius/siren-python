@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, Iterator, List, Optional, TypedDict
+from typing import Any, Dict, Iterator, List, Optional, TypedDict, Union
 
 
 class WebhookEventType(str, Enum):
@@ -142,6 +142,12 @@ class AppItemKind(str, Enum):
     with the pool's units and every conversion id of the question, each a
     whole number of 0 or more or ``None``. The rewards wait for the answer,
     24 hours from the first ask at most.
+
+    A payout method (``PAYOUT_METHOD``) is asked to pay one payout. It answers
+    ``{"outcome": "paid", "reference": "acme-ledger-5521"}``, the reference
+    1 to 191 characters, or ``{"outcome": "failed", "reason": "The account is
+    closed."}``, the reason 1 to 500 characters. The app pays each payout id
+    at most once. Siren drops an ask after 24 hours with no answer.
     """
 
     POST_CONVERSION_ACTION = "postConversionAction"
@@ -400,6 +406,49 @@ class AppRewardAnswer(TypedDict):
     outcome: str
     units: str
     rewards: Dict[str, Optional[int]]
+
+
+class AppPayoutRef(TypedDict):
+    id: int
+    fulfillmentId: int
+    attempt: int
+
+
+class AppPayoutCollaborator(TypedDict):
+    id: int
+    name: str
+    email: str
+
+
+class AppPayoutQuestion(TypedDict):
+    """``payoutMethod`` (an ask): pay ``amount`` to ``collaborator`` for one
+    payout. ``amount["value"]`` is a whole number in the currency's smallest
+    unit. ``payout["attempt"]`` starts at 1 and rises when Siren asks again
+    about the same payout, such as after a failed answer and a retry. Pay
+    each payout id at most once. When Siren asks again about a payout the app
+    already paid, answer ``paid`` with the first reference."""
+
+    payout: AppPayoutRef
+    amount: AppAmount
+    collaborator: AppPayoutCollaborator
+
+
+class AppPayoutPaid(TypedDict):
+    """``outcome`` is ``paid``. ``reference`` is 1 to 191 characters, the
+    payment's id in the app's own system."""
+
+    outcome: str
+    reference: str
+
+
+class AppPayoutFailed(TypedDict):
+    """``outcome`` is ``failed``. ``reason`` is 1 to 500 characters."""
+
+    outcome: str
+    reason: str
+
+
+AppPayoutAnswer = Union[AppPayoutPaid, AppPayoutFailed]
 
 
 class AppConversionActionData(TypedDict):
