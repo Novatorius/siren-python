@@ -353,6 +353,17 @@ def split_the_reward(request):
     return {"outcome": "rewards", "units": pool["units"], "rewards": rewards}
 ```
 
+A program group structure returns every program of the group once, in the
+order Siren tries them:
+
+```python
+@answers.on("programGroupSorter", "pick-the-program")
+def pick_the_program(request):
+    # Try the program whose best engagement scores highest first.
+    best = {p["id"]: max([0] + [e["score"] for e in p["engagements"]]) for p in request.data["programs"]}
+    return {"outcome": "sorted", "programIds": sorted(best, key=best.get, reverse=True)}
+```
+
 The handler checks each request the way `apps.verify_request()` does, then
 replies:
 
@@ -477,6 +488,16 @@ again about rewards already made. The answer gives the pool's `units`, and in
 `rewards` every `conversionId` of the question as text, each a whole number of
 0 or more or `None` for a collaborator who earns nothing. The rewards may add
 up to more than the pool.
+
+A program group structure (`AppItemKind.PROGRAM_GROUP_SORTER`) orders a
+program group's programs for one sale or lead. Its question holds the `group`,
+the `conversionType`, the `opportunity`, the `transaction` (`None` for a lead)
+with its `total` as a stored whole number, and the `programs` of the group
+that take the conversion, in the group's order, each with its active
+`engagements` on the opportunity, oldest first. The answer gives `programIds`,
+every program id of the question exactly once, in the order Siren tries them.
+The first program that converts wins the group. Nothing in the group is
+awarded until the answer, 24 hours from the first ask at most.
 
 The rewards wait for the answer, 24 hours from the first ask about a sale at
 most. Then Siren stops waiting: a sale's collaborators get no reward, and a

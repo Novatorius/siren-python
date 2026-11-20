@@ -142,6 +142,12 @@ class AppItemKind(str, Enum):
     with the pool's units and every conversion id of the question, each a
     whole number of 0 or more or ``None``. The rewards wait for the answer,
     24 hours from the first ask at most.
+
+    A program group structure (``PROGRAM_GROUP_SORTER``) orders a program
+    group's programs for one sale or lead. It answers
+    ``{"outcome": "sorted", "programIds": [9, 12]}``, every program id of the
+    question exactly once. The first program that converts wins the group,
+    which waits for the answer, 24 hours from the first ask at most.
     """
 
     POST_CONVERSION_ACTION = "postConversionAction"
@@ -152,6 +158,7 @@ class AppItemKind(str, Enum):
     METRIC_CALCULATION = "metricCalculation"
     METRIC_FILTER = "metricFilter"
     INCENTIVE_RESOLVER = "incentiveResolver"
+    PROGRAM_GROUP_SORTER = "programGroupSorter"
 
     def __str__(self) -> str:
         return self.value
@@ -400,6 +407,41 @@ class AppRewardAnswer(TypedDict):
     outcome: str
     units: str
     rewards: Dict[str, Optional[int]]
+
+
+class AppGroupOrderEngagement(TypedDict):
+    engagementId: int
+    collaboratorId: int
+    score: float
+    createdDate: str
+
+
+class AppGroupOrderProgram(TypedDict):
+    id: int
+    name: str
+    engagements: List[AppGroupOrderEngagement]
+
+
+class AppGroupOrderQuestion(TypedDict):
+    """``programGroupSorter`` (an ask): order the group's ``programs`` for
+    one sale or lead. ``programs`` holds each program of the group that takes
+    the conversion once, in the group's order, with its active engagements on
+    the opportunity, oldest first. ``transaction`` is ``None`` for a lead, and
+    its ``total`` is a stored whole number."""
+
+    group: Dict[str, Any]
+    conversionType: str
+    opportunity: Dict[str, Any]
+    transaction: Optional[Dict[str, Any]]
+    programs: List[AppGroupOrderProgram]
+
+
+class AppGroupOrderAnswer(TypedDict):
+    """Every program id of the question exactly once, in the order Siren
+    tries them. ``outcome`` is ``sorted``."""
+
+    outcome: str
+    programIds: List[int]
 
 
 class AppConversionActionData(TypedDict):

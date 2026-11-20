@@ -28,6 +28,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   whole steps of the currency, rounded down so the sum never passes the
   pool, and evenly when every weight is 0. It raises `ValueError` for a
   negative or non-finite weight.
+- `AppItemKind.PROGRAM_GROUP_SORTER` (`programGroupSorter`), the kind a
+  program group picks as its structure to let the app order its programs for
+  each sale or lead, with the types `AppGroupOrderQuestion`,
+  `AppGroupOrderProgram`, `AppGroupOrderEngagement` and `AppGroupOrderAnswer`,
+  `{"outcome": "sorted", "programIds": [...]}`. The README shows the
+  handler's sample for it.
 - Types for each feature kind's question and answer: `AppDistributionQuestion`,
   `AppDistributionAnswer`, `AppRewardQuestion`, `AppRewardAnswer`,
   `AppConversionActionData`, `AppAllocationActionData`, and the `AppCurrency`,
