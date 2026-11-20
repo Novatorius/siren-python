@@ -17,9 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `answers.django`, `answers.asgi` or `answers.wsgi`, or call it with the raw
   body and headers for an `AppRequestReply`. It answers 405 for a method
   other than POST, 413 for a body over 1 MiB, 500 when a body parser already
-  read the body, 401 for a
-  signature or time `verify_request()` refuses, 400 for a signed body that is
-  not a request, 200 once a tell's function returns and 500 when it raises,
+  read the body, 401 for a signature or time `verify_request()` refuses, 400
+  for a signed body that is not a request, 200 once a tell's function returns and 500 when it raises,
   200 at once for an ask, and 404 for a kind and key with no function. After
   an ask's 200 it posts what the function returns to
   `POST /apps/requests/{id}/answer`, sent again after a lost connection, 429
@@ -34,6 +33,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `AppConversionActionData`, `AppAllocationActionData`, and the `AppCurrency`,
   `AppAmount`, `AppDistributionPool`, `AppDistributionMetric` and
   `AppRewardConversion` they hold.
+- `AppItemKind` names the kinds of feature an app can add, as an app
+  request's `item["kind"]` carries them, among them the new
+  `METRIC_CALCULATION` (`metricCalculation`) and `METRIC_FILTER`
+  (`metricFilter`). The README shows the answer each of the two takes.
 - `apps.verify_request(raw_body, headers, secret, *, tolerance_seconds, now)`
   checks a request Siren signed and sent an app and returns an `AppRequest`.
   It checks `X-Siren-Event`, the `X-Siren-Signature-V2` signature over
