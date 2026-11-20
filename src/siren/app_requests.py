@@ -10,6 +10,8 @@ Python. Call it with the raw body and the headers for an
 The replies, in the order the checks run:
 
 - 405 for a method other than POST.
+- 413 for a body over :data:`MAX_BODY_BYTES`, 1 MiB, more than Siren sends.
+  The faces answer it from the length and stop reading.
 - 500 when a body parser already turned the body into an object, so the
   bytes Siren signed are gone. ``on_error`` gets a :class:`~siren.SirenError`
   that says so, and Siren sends the request again.
@@ -69,7 +71,11 @@ from .webhooks import _is_envelope as _is_webhook_envelope
 if TYPE_CHECKING:  # pragma: no cover
     from .apps import AppRequests
 
-__all__ = ["AppRequestHandler", "AppRequestReply"]
+__all__ = ["AppRequestHandler", "AppRequestReply", "MAX_BODY_BYTES"]
+
+#: The longest body the handler reads, 1 MiB, as in the Node SDK. Siren's
+#: requests are far smaller, since an answer alone stays under 16 KB.
+MAX_BODY_BYTES = 1024 * 1024
 
 logger = logging.getLogger("siren")
 
@@ -78,6 +84,9 @@ BODY_ALREADY_PARSED = (
     "The Siren request handler got a body that a parser already read, so it cannot check the signature. "
     "Mount the handler before any JSON body parser, or give its route the raw body."
 )
+
+#: What a face hands the core in place of a body over the limit.
+_TOO_LARGE = object()
 
 _JSON_HEADERS: Tuple[Tuple[str, str], ...] = (("Content-Type", "application/json"), ("Cache-Control", "no-store"))
 
@@ -281,6 +290,9 @@ class AppRequestHandler:
     def _check(self, method: Any, raw_body: Any, headers: Any) -> Union[AppRequestReply, _Run]:
         if not isinstance(method, str) or method.upper() != "POST":
             return _reply(405, "Siren sends its requests with POST.", headers=_JSON_HEADERS + (("Allow", "POST"),))
+        too_large = _reply(413, f"The request body is over {MAX_BODY_BYTES} bytes, more than Siren sends.")
+        if raw_body is _TOO_LARGE:
+            return too_large
         if isinstance(raw_body, str):
             body = raw_body.encode("utf-8")
         elif isinstance(raw_body, (bytes, bytearray, memoryview)):
@@ -288,6 +300,8 @@ class AppRequestHandler:
         else:
             self._report(SirenError(BODY_ALREADY_PARSED), None)
             return _reply(500, BODY_ALREADY_PARSED)
+        if len(body) > MAX_BODY_BYTES:
+            return too_large
         names = _headers(headers)
 
         event = _header(names, "X-Siren-Event")
@@ -479,8 +493,9 @@ class _Wsgi:
         return _ClosingBody(data, lambda: self._handler._hand_off(after, None))
 
 
-def _wsgi_body(environ: Mapping[str, Any]) -> Optional[bytes]:
-    """The body from ``wsgi.input``, or ``None`` when something read it first."""
+def _wsgi_body(environ: Mapping[str, Any]) -> Any:
+    """The body from ``wsgi.input``, ``None`` when something read it first, or
+    the too-large marker for a body over the limit, which is left unread."""
     stream = environ.get("wsgi.input")
     if stream is None:
         return None
@@ -488,8 +503,14 @@ def _wsgi_body(environ: Mapping[str, Any]) -> Optional[bytes]:
         length = int(environ.get("CONTENT_LENGTH") or 0)
     except ValueError:
         length = 0
+    if length > MAX_BODY_BYTES:
+        return _TOO_LARGE
     if length <= 0:
-        return bytes(stream.read()) if environ.get("wsgi.input_terminated") else b""
+        if not environ.get("wsgi.input_terminated"):
+            return b""
+        # One byte past the limit is enough to know it is too long.
+        data = bytes(stream.read(MAX_BODY_BYTES + 1))
+        return _TOO_LARGE if len(data) > MAX_BODY_BYTES else data
     data = bytes(stream.read(length))
     # Fewer bytes than the header promised means a middleware read them.
     return data if len(data) == length else None
@@ -520,16 +541,22 @@ class _Asgi:
             raise RuntimeError(f"The Siren request handler serves HTTP, not {scope['type']}.")
 
         chunks: List[bytes] = []
+        size = 0
         while True:
             message = await receive()
             if message["type"] == "http.disconnect":
                 return
-            chunks.append(message.get("body", b""))
+            chunk = message.get("body", b"")
+            size += len(chunk)
+            if size > MAX_BODY_BYTES:
+                break  # Stop reading. The reply is 413.
+            chunks.append(chunk)
             if not message.get("more_body", False):
                 break
 
         handler = self._handler
-        checked = handler._check(scope.get("method"), b"".join(chunks), list(scope.get("headers") or []))
+        body: Any = _TOO_LARGE if size > MAX_BODY_BYTES else b"".join(chunks)
+        checked = handler._check(scope.get("method"), body, list(scope.get("headers") or []))
         run: Optional[_Run] = None
         if isinstance(checked, AppRequestReply):
             reply = checked
@@ -563,10 +590,14 @@ def _flask_view(handler: AppRequestHandler) -> Callable[[], Any]:
         """The handler as a Flask view. Flask is imported when a request comes."""
         from flask import Response, request
 
-        data = request.get_data(cache=True)
-        body: Optional[bytes] = data
-        if not data and (request.content_length or 0) > 0:
-            body = None  # Something read the stream first.
+        body: Any
+        if (request.content_length or 0) > MAX_BODY_BYTES:
+            body = _TOO_LARGE
+        else:
+            data = request.get_data(cache=True)
+            body = data
+            if not data and (request.content_length or 0) > 0:
+                body = None  # Something read the stream first.
         reply = handler._handle(request.method, body, request.headers)
         response = Response(reply.content, status=reply.status, headers=list(reply.headers))
         after = reply.after
@@ -584,9 +615,13 @@ def _django_view(handler: AppRequestHandler) -> Callable[[Any], Any]:
         from django.http import HttpResponse  # type: ignore[import-untyped,import-not-found,unused-ignore]
         from django.http.request import RawPostDataException  # type: ignore[import-untyped,import-not-found,unused-ignore]
 
-        body: Optional[bytes]
+        body: Any
         try:
-            body = request.body
+            length = int(request.META.get("CONTENT_LENGTH") or 0)
+        except ValueError:
+            length = 0
+        try:
+            body = _TOO_LARGE if length > MAX_BODY_BYTES else request.body
         except RawPostDataException:
             body = None
         reply = handler._handle(request.method, body, request.headers)

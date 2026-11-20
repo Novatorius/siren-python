@@ -359,6 +359,7 @@ replies:
 | Request | Reply |
 |---|---|
 | Not a POST | 405 |
+| A body over 1 MiB, more than Siren sends | 413, read no further |
 | A body a parser already read, so the signed bytes are gone | 500, and `on_error` gets a `SirenError` that says to mount the handler before the JSON parser |
 | A signature that is missing or wrong, or a time outside `tolerance_seconds` | 401 |
 | A signed body that is not JSON, or not an app request of version 1 | 400 |

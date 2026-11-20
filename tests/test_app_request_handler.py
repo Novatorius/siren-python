@@ -18,13 +18,13 @@ import json
 import threading
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import httpx
 import pytest
 
 import siren
-from siren.app_requests import AppRequestHandler, AppRequestReply
+from siren.app_requests import MAX_BODY_BYTES, AppRequestHandler, AppRequestReply
 
 from .conftest import API_KEY
 
@@ -774,13 +774,15 @@ class TestWsgi:
         assert len(queued) == 1
 
 
-def run_asgi(app, body: str, headers: Dict[str, str], *, method: str = "POST", chunks: int = 2):
-    data = body.encode()
+def run_asgi(app, body: Union[str, bytes], headers: Dict[str, str], *, method: str = "POST", chunks: int = 2, order: Optional[List[str]] = None):
+    """Calls an ASGI app. Each message sent is appended to ``order``, so a
+    test can put its own steps in the same list and compare the two."""
+    data = body.encode() if isinstance(body, str) else body
     size = max(1, len(data) // chunks + 1)
     parts = [data[i : i + size] for i in range(0, len(data), size)] or [b""]
     messages = [{"type": "http.request", "body": part, "more_body": i < len(parts) - 1} for i, part in enumerate(parts)]
     sent: List[Dict[str, Any]] = []
-    order: List[str] = []
+    order = [] if order is None else order
 
     async def receive():
         return messages.pop(0) if messages else {"type": "http.disconnect"}
@@ -834,11 +836,11 @@ class TestAsgi:
         answers = handler(app_client, errors).on("distributionResolver", split)
         body = body_of("distributionResolver")
 
-        status, _, payload, sent = run_asgi(answers.asgi, body, sign(body))
+        status, _, payload, _ = run_asgi(answers.asgi, body, sign(body), order=order)
 
         assert (status, payload) == (200, {})
-        assert sent == ["http.response.start", "http.response.body"]
-        assert order == ["function", "posted"]
+        # One list holds the reply's messages and the work, so it shows the reply went first.
+        assert order == ["http.response.start", "http.response.body", "function", "posted"]
         assert errors.seen == []
 
     def test_a_sync_ask_runs_on_a_worker_thread(self, app_client, errors, siren_api):
@@ -1016,3 +1018,102 @@ def test_no_framework_is_imported_until_its_face_is_used():
     output = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, check=True).stdout
 
     assert output.strip() == "[]"
+
+
+# Parity with Node: a body over 1 MiB answers 413 before anything is read or checked.
+
+TOO_BIG = b"x" * (MAX_BODY_BYTES + 1)
+
+
+class TestBodyOverTheLimit:
+    def test_the_plain_call_answers_413_before_the_signature(self, app_client, errors):
+        called = []
+        answers = handler(app_client, errors).on("postConversionAction", called.append)
+
+        reply = answers(TOO_BIG, sign(TOO_BIG.decode()))
+
+        assert reply.status == 413
+        assert reply.body == {"error": f"The request body is over {MAX_BODY_BYTES} bytes, more than Siren sends."}
+        assert called == [] and errors.seen == []
+        assert_json_reply(reply)
+
+    def test_a_body_of_exactly_the_limit_is_checked_as_usual(self, app_client, errors):
+        body = b"x" * MAX_BODY_BYTES
+
+        assert handler(app_client, errors)(body, sign(body.decode())).status == 400
+
+    def test_a_get_still_answers_405_first(self, app_client, errors):
+        assert handler(app_client, errors)(TOO_BIG, {}, method="GET").status == 405
+
+    def test_wsgi_answers_413_from_the_length_without_reading_the_input(self, app_client, errors):
+        class Unread(io.BytesIO):
+            def read(self, *args):
+                raise AssertionError("the handler read a body over the limit")
+
+        answers = handler(app_client, errors)
+        status, _, payload, _ = run_wsgi(answers.wsgi, TOO_BIG.decode(), sign("x"), stream=Unread())
+
+        assert status.startswith("413 ")  # The phrase changed name in Python 3.13.
+        assert "more than Siren sends" in payload["error"]
+
+    def test_wsgi_reads_a_body_with_no_length_only_up_to_the_limit(self, app_client, errors):
+        stream = io.BytesIO(TOO_BIG + b"y" * 10)
+        environ = {"REQUEST_METHOD": "POST", "wsgi.input": stream, "wsgi.input_terminated": True}
+        started = {}
+
+        payload = b"".join(handler(app_client, errors).wsgi(environ, lambda status, headers: started.update(status=status)))
+
+        assert started["status"].startswith("413 ")
+        assert stream.tell() == MAX_BODY_BYTES + 1
+        assert "more than Siren sends" in json.loads(payload)["error"]
+
+    def test_asgi_answers_413_and_stops_reading(self, app_client, errors):
+        chunk = {"type": "http.request", "body": b"x" * (MAX_BODY_BYTES // 2 + 1), "more_body": True}
+        messages = [dict(chunk), dict(chunk), dict(chunk), {"type": "http.request", "body": b"", "more_body": False}]
+        sent: List[Dict[str, Any]] = []
+
+        async def receive():
+            return messages.pop(0)
+
+        async def send(message):
+            sent.append(message)
+
+        scope = {"type": "http", "method": "POST", "path": "/siren", "query_string": b"", "headers": []}
+        asyncio.run(handler(app_client, errors).asgi(scope, receive, send))
+
+        assert sent[0]["status"] == 413
+        assert "more than Siren sends" in json.loads(sent[1]["body"])["error"]
+        assert len(messages) == 2  # It stopped at the chunk that passed the limit.
+
+    def test_flask_answers_413_from_the_length_without_reading(self, app_client, errors):
+        pytest.importorskip("flask")
+        from flask import Flask
+        from werkzeug.test import EnvironBuilder
+
+        class Unread(io.BytesIO):
+            def read(self, *args):
+                raise AssertionError("the handler read a body over the limit")
+
+        app = Flask(__name__)
+        app.add_url_rule("/siren", view_func=handler(app_client, errors).flask, methods=["POST"])
+        environ = EnvironBuilder(path="/siren", method="POST", data=TOO_BIG, headers=sign("x")).get_environ()
+        environ["wsgi.input"] = Unread()
+        started = {}
+
+        payload = b"".join(app.wsgi_app(environ, lambda status, headers, exc_info=None: started.update(status=status)))
+
+        assert started["status"].startswith("413 ")
+        assert "more than Siren sends" in json.loads(payload)["error"]
+
+    def test_django_answers_413_from_the_length_without_reading(self, app_client, errors, django_ready):
+        class Unread(io.BytesIO):
+            def read(self, *args):
+                raise AssertionError("the handler read a body over the limit")
+
+        request = django_request(TOO_BIG.decode(), sign("x"))
+        request._stream = Unread()
+
+        response = handler(app_client, errors).django(request)
+
+        assert response.status_code == 413
+        assert "more than Siren sends" in json.loads(response.content)["error"]

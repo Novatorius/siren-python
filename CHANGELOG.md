@@ -16,7 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   webhook event with `on_event(type, fn)`. Mount it as `answers.flask`,
   `answers.django`, `answers.asgi` or `answers.wsgi`, or call it with the raw
   body and headers for an `AppRequestReply`. It answers 405 for a method
-  other than POST, 500 when a body parser already read the body, 401 for a
+  other than POST, 413 for a body over 1 MiB, 500 when a body parser already
+  read the body, 401 for a
   signature or time `verify_request()` refuses, 400 for a signed body that is
   not a request, 200 once a tell's function returns and 500 when it raises,
   200 at once for an ask, and 404 for a kind and key with no function. After
