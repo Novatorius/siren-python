@@ -1,4 +1,5 @@
-"""The browser token address in Django. Add path("siren/token", siren_token) to urls.py."""
+"""The browser token address and Siren's request handler in Django. Add
+path("siren", answers.django) and path("siren/token", siren_token) to urls.py."""
 
 import os
 
@@ -12,6 +13,13 @@ client = siren.Siren(
 )
 
 tokens = client.events.browser_token_handler(events=["signup-completed"])
+answers = client.apps.request_handler(os.environ["SIREN_SIGNING_SECRET"])
+
+
+@answers.on("postConversionAction", "tell-the-crm")
+def tell_the_crm(request):
+    # Siren may send it twice, so add it once, keyed by request.id.
+    print("Conversion", request.data["conversion"]["id"], "for request", request.id)
 
 
 @csrf_exempt

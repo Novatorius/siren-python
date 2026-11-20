@@ -18,7 +18,7 @@ pip install -e ".[dev]"
 ```
 
 This installs the SDK in editable mode along with the development dependencies
-(`pytest`, `respx`, `build`).
+(`pytest`, `respx`, `build`, and Flask and Django for the request handler's tests).
 
 ## Running the tests
 

@@ -13,11 +13,15 @@ import json
 import math
 import re
 import time
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple, Union
+from fractions import Fraction
+from typing import TYPE_CHECKING, Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple, Union
 
 from ._client import HttpClient, parse_json
 from .errors import ApiError, AuthenticationError, ErrorCode, SignatureVerificationError
 from .types import AppAnswerReceipt, AppRequest
+
+if TYPE_CHECKING:  # pragma: no cover
+    from .app_requests import AppRequestHandler
 
 #: How far the signed time may be from this machine's clock by default, in seconds.
 DEFAULT_TOLERANCE_SECONDS = 300
@@ -115,6 +119,83 @@ def _is_envelope(body: Any) -> bool:
     )
 
 
+class _BodyRefused(SignatureVerificationError):
+    """The signature held, but the signed body is not what Siren sends. The
+    request handler answers this with 400 and a failed signature with 401."""
+
+
+def _check_tolerance(method: str, tolerance_seconds: Optional[int]) -> int:
+    tolerance = DEFAULT_TOLERANCE_SECONDS if tolerance_seconds is None else tolerance_seconds
+    if (
+        not isinstance(tolerance, int)
+        or isinstance(tolerance, bool)
+        or tolerance < 1
+        or tolerance > MAX_TOLERANCE_SECONDS
+    ):
+        raise ValueError(f"{method} takes tolerance_seconds as a whole number from 1 to {MAX_TOLERANCE_SECONDS}.")
+    return tolerance
+
+
+def _check_signature(body_bytes: bytes, headers: Mapping[str, HeaderValue], secret: str, tolerance: int, clock: float) -> int:
+    """Steps 3 to 6 of :meth:`Apps.verify_request`: the V2 signature over
+    ``"{t}."`` and the raw body, the timestamp header, and the replay window.
+    Returns the signed time. Webhook events at the app's address are signed
+    the same way (WebhookSignature::headers() in Siren)."""
+    v2 = _header(headers, "X-Siren-Signature-V2")
+    if v2 is None:
+        raise SignatureVerificationError("The request has no X-Siren-Signature-V2 header.")
+    signed_at, signatures = _read_signature_header(v2)
+
+    stamp = _header(headers, "X-Siren-Timestamp")
+    if stamp is not None and stamp != str(signed_at):
+        raise SignatureVerificationError(
+            "The X-Siren-Timestamp header differs from the time X-Siren-Signature-V2 signed."
+        )
+
+    expected = hmac.new(secret.encode("utf-8"), f"{signed_at}.".encode("ascii") + body_bytes, hashlib.sha256).hexdigest()
+    matched = False
+    for signature in signatures:
+        # Every candidate is compared, so the time taken says nothing about which matched.
+        matched = hmac.compare_digest(expected, signature) or matched
+    if not matched:
+        raise SignatureVerificationError(
+            "The request signature does not match. Pass the raw body exactly as received and the signing secret of this app."
+        )
+
+    if abs(clock - signed_at) > tolerance:
+        raise SignatureVerificationError(
+            f"The request's signed timestamp is more than {tolerance} seconds from this machine's clock, "
+            "so it may be a replay. Check the clock if every request fails."
+        )
+    return signed_at
+
+
+def _checked_answer(method: str, request_id: Any, answer: Any) -> Dict[str, Any]:
+    """The answer as :meth:`AppRequests.answer` sends it, or :class:`ValueError`
+    for one Siren would refuse or that can't be written."""
+    if not isinstance(request_id, str) or not _REQUEST_ID.match(request_id):
+        raise ValueError(
+            f"{method} needs a request id of apr_ and 32 lowercase hex characters, and got {request_id!r}."
+        )
+    if not isinstance(answer, Mapping):
+        raise ValueError(
+            f"{method} takes the answer as a mapping, such as {{'outcome': 'paid', 'reference': 'TX-1'}}."
+        )
+    copy: Dict[str, Any] = dict(answer)
+    outcome = copy.get("outcome")
+    if not isinstance(outcome, str) or outcome == "":
+        raise ValueError(f"{method} needs a text outcome in the answer, such as 'paid' or 'resolved'.")
+    try:
+        encoded = json.dumps(copy, separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode("utf-8")
+    except (TypeError, ValueError) as error:
+        raise ValueError(f"{method} could not write the answer as JSON.") from error
+    if len(encoded) > MAX_ANSWER_BYTES:
+        raise ValueError(
+            f"{method} takes an answer of at most {MAX_ANSWER_BYTES} bytes as JSON, which Siren also refuses past."
+        )
+    return copy
+
+
 class AppRequests:
     """``siren.apps.requests`` — answer an ask Siren sent the app.
 
@@ -145,31 +226,16 @@ class AppRequests:
         and :class:`~siren.ApiError` when Siren answers 2xx with a body that
         is not an accepted answer.
         """
-        method = "apps.requests.answer()"
-        if not isinstance(request_id, str) or not _REQUEST_ID.match(request_id):
-            raise ValueError(
-                f"{method} needs a request id of apr_ and 32 lowercase hex characters, and got {request_id!r}."
-            )
-        if not isinstance(answer, Mapping):
-            raise ValueError(
-                f"{method} takes the answer as a mapping, such as {{'outcome': 'paid', 'reference': 'TX-1'}}."
-            )
-        copy: Dict[str, Any] = dict(answer)
-        outcome = copy.get("outcome")
-        if not isinstance(outcome, str) or outcome == "":
-            raise ValueError(f"{method} needs a text outcome in the answer, such as 'paid' or 'resolved'.")
-        try:
-            encoded = json.dumps(copy, separators=(",", ":"), ensure_ascii=False, allow_nan=False).encode("utf-8")
-        except (TypeError, ValueError) as error:
-            raise ValueError(f"{method} could not write the answer as JSON.") from error
-        if len(encoded) > MAX_ANSWER_BYTES:
-            raise ValueError(
-                f"{method} takes an answer of at most {MAX_ANSWER_BYTES} bytes as JSON, which Siren also refuses past."
-            )
+        return self._send("apps.requests.answer()", request_id, answer, retryable=False)
 
+    def _send(self, method: str, request_id: Any, answer: Any, *, retryable: bool) -> AppAnswerReceipt:
+        """Checks and posts an answer. ``retryable`` is true only from the
+        request handler, which always resends the same bytes, and Siren takes
+        the same answer again as a duplicate. A refusal (4xx) is never resent."""
+        copy = _checked_answer(method, request_id, answer)
         path = f"/apps/requests/{request_id}/answer"
         try:
-            response = self._client.request("POST", path, json=copy, retryable=False)
+            response = self._client.request("POST", path, json=copy, retryable=retryable)
         except AuthenticationError as error:
             if error.status_code == 401 and not error.code:
                 raise AuthenticationError(
@@ -201,6 +267,109 @@ class Apps:
 
     def __init__(self, client: HttpClient) -> None:
         self.requests = AppRequests(client)
+
+    def request_handler(
+        self,
+        signing_secret: str,
+        *,
+        tolerance_seconds: Optional[int] = None,
+        run_later: Optional[Callable[[Callable[[], None]], Any]] = None,
+        on_error: Optional[Callable[..., Any]] = None,
+    ) -> "AppRequestHandler":
+        """One address for everything Siren sends the app: it checks each
+        request as :meth:`verify_request` does, runs the function registered
+        for its kind and key with :meth:`AppRequestHandler.on`, replies, and
+        posts an ask's answer with this client's key. See
+        :class:`~siren.AppRequestHandler` for the replies and the faces to
+        mount (``flask``, ``django``, ``asgi``, ``wsgi``).
+
+        ``run_later`` is handed an ask's work, a callable with no arguments,
+        in place of running it after the reply, for a host that stops work
+        once it has replied. ``on_error(error, request)`` gets every failure
+        the reply can't show. It logs to the ``siren`` logger by default.
+
+        Raises :class:`ValueError` for an empty secret, a tolerance outside 1
+        to :data:`MAX_TOLERANCE_SECONDS`, and a ``run_later`` or ``on_error``
+        that is not callable.
+        """
+        from .app_requests import AppRequestHandler
+
+        return AppRequestHandler(
+            self.requests,
+            signing_secret,
+            tolerance_seconds=tolerance_seconds,
+            run_later=run_later,
+            on_error=on_error,
+        )
+
+    @staticmethod
+    def split_pool(
+        pool: Mapping[str, Any],
+        weights: Union[Mapping[Any, Any], Iterable[Tuple[Any, Any]]],
+    ) -> Dict[str, int]:
+        """Split a pool Siren offered by weight, for a distribution or
+        incentive resolver's answer. It reads nothing over the network.
+
+        ``pool`` is the question's ``pool``: ``value`` in the stored integer
+        form, and ``currency`` with ``scale`` and ``decimalPlaces``.
+        ``weights`` maps each id to a weight, such as a metric's ``score``, or
+        is a list of ``(id, weight)`` pairs.
+
+        Returns ``{str(id): amount}``. Every amount is a whole number of the
+        currency's step, ``10 ** (scale - decimalPlaces)`` in the stored form
+        (1 for dollars, 100 for yen), rounded down, so the sum never passes
+        ``pool["value"]``. Part of the pool may stay unpaid, which Siren
+        takes. When every weight is 0 the pool is split evenly.
+
+        Raises :class:`ValueError` for a pool without a whole ``value`` of 0
+        or more, a ``scale`` or ``decimalPlaces`` that is not a whole number,
+        an id that is not text or a whole number, an id given twice, and a
+        weight that is negative, not finite, or not a number.
+        """
+        method = "apps.split_pool()"
+        if not isinstance(pool, Mapping):
+            raise ValueError(f"{method} takes the question's pool, a mapping with value and currency.")
+        value = pool.get("value")
+        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+            raise ValueError(f"{method} needs the pool's value as a whole number of 0 or more, as Siren sends it.")
+        currency = pool.get("currency")
+        currency = currency if isinstance(currency, Mapping) else {}
+        scale = currency.get("scale", 0)
+        places = currency.get("decimalPlaces", scale)
+        for name, number in (("scale", scale), ("decimalPlaces", places)):
+            if not isinstance(number, int) or isinstance(number, bool) or number < 0:
+                raise ValueError(f"{method} needs the currency's {name} as a whole number of 0 or more.")
+        step = 10 ** max(0, scale - places)
+
+        if isinstance(weights, (str, bytes)):
+            raise ValueError(f"{method} takes the weights as a mapping of id to weight or a list of (id, weight) pairs.")
+        pairs = list(weights.items()) if isinstance(weights, Mapping) else list(weights)
+        exact: Dict[str, Fraction] = {}
+        for pair in pairs:
+            if not isinstance(pair, (tuple, list)) or len(pair) != 2:
+                raise ValueError(f"{method} takes the weights as a mapping of id to weight or a list of (id, weight) pairs.")
+            key, weight = pair
+            if isinstance(key, bool) or not isinstance(key, (str, int)):
+                raise ValueError(f"{method} takes each id as text or a whole number, and got {key!r}.")
+            if isinstance(weight, bool) or not isinstance(weight, (int, float)):
+                raise ValueError(f"{method} takes each weight as a number, and the weight for {key} is {weight!r}.")
+            if not math.isfinite(weight) or weight < 0:
+                raise ValueError(f"{method} takes each weight as a finite number of 0 or more, and the weight for {key} is {weight!r}.")
+            name = str(key)
+            if name in exact:
+                raise ValueError(f"{method} got the id {name} twice.")
+            exact[name] = Fraction(weight)
+
+        if not exact:
+            return {}
+        steps = value // step
+        total = sum(exact.values(), Fraction(0))
+        if total == 0:
+            even = steps // len(exact)
+            return {name: even * step for name in exact}
+        # Fractions keep the arithmetic exact, so rounding each share down
+        # keeps the sum at or under the pool.
+        return {name: math.floor(steps * weight / total) * step for name, weight in exact.items()}
 
     @staticmethod
     def verify_request(
@@ -240,16 +409,7 @@ class Apps:
         method = "apps.verify_request()"
         if not isinstance(secret, str) or secret == "":
             raise ValueError(f"{method} needs the app's signing secret, which Siren showed when it made the app.")
-        tolerance = DEFAULT_TOLERANCE_SECONDS if tolerance_seconds is None else tolerance_seconds
-        if (
-            not isinstance(tolerance, int)
-            or isinstance(tolerance, bool)
-            or tolerance < 1
-            or tolerance > MAX_TOLERANCE_SECONDS
-        ):
-            raise ValueError(
-                f"{method} takes tolerance_seconds as a whole number from 1 to {MAX_TOLERANCE_SECONDS}."
-            )
+        tolerance = _check_tolerance(method, tolerance_seconds)
         clock = time.time() if now is None else now
         if isinstance(clock, bool) or not isinstance(clock, (int, float)) or not math.isfinite(clock):
             raise ValueError(f"{method} takes now as a finite number of Unix seconds.")
@@ -268,39 +428,14 @@ class Apps:
                 f"This is a {event} webhook, not an app request. Check it with webhooks.construct_event()."
             )
 
-        v2 = _header(headers, "X-Siren-Signature-V2")
-        if v2 is None:
-            raise SignatureVerificationError("The request has no X-Siren-Signature-V2 header.")
-        signed_at, signatures = _read_signature_header(v2)
-
-        stamp = _header(headers, "X-Siren-Timestamp")
-        if stamp is not None and stamp != str(signed_at):
-            raise SignatureVerificationError(
-                "The X-Siren-Timestamp header differs from the time X-Siren-Signature-V2 signed."
-            )
-
-        expected = hmac.new(secret.encode("utf-8"), f"{signed_at}.".encode("ascii") + body_bytes, hashlib.sha256).hexdigest()
-        matched = False
-        for signature in signatures:
-            # Every candidate is compared, so the time taken says nothing about which matched.
-            matched = hmac.compare_digest(expected, signature) or matched
-        if not matched:
-            raise SignatureVerificationError(
-                "The request signature does not match. Pass the raw body exactly as received and the signing secret of this app."
-            )
-
-        if abs(clock - signed_at) > tolerance:
-            raise SignatureVerificationError(
-                f"The request's signed timestamp is more than {tolerance} seconds from this machine's clock, "
-                "so it may be a replay. Check the clock if every request fails."
-            )
+        signed_at = _check_signature(body_bytes, headers, secret, tolerance, clock)
 
         try:
             body = json.loads(body_bytes.decode("utf-8"))
         except (UnicodeDecodeError, ValueError) as error:
-            raise SignatureVerificationError("The signed body is not JSON.") from error
+            raise _BodyRefused("The signed body is not JSON.") from error
         if not _is_envelope(body):
-            raise SignatureVerificationError("The signed body is not an app request of version 1.")
+            raise _BodyRefused("The signed body is not an app request of version 1.")
 
         return AppRequest(
             version=1,

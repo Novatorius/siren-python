@@ -297,12 +297,132 @@ client.webhooks.subscriptions.list()
 client.webhooks.subscriptions.delete(subscription.id)
 ```
 
-### Answer Siren's request to your app
+### Answer Siren in a few lines
 
-An app's feature, such as a payout method or a distribution resolver, gets
-requests from Siren at the app's address. Siren signs each one with the app's
-signing secret. Check it with `apps.verify_request()`, then answer an ask
-with `apps.requests.answer()`, using a client made with the app's own key.
+An app's feature, such as a distribution resolver or an action after a
+conversion, gets requests from Siren at the app's address. Make a request
+handler with the app's signing secret, register a function for each feature
+by its kind and key, and mount the handler. Make the client with the app's
+own key, since the handler posts an ask's answer with it.
+
+```python
+import os
+import siren
+from flask import Flask
+
+client = siren.Siren(api_key=os.environ["SIREN_API_KEY"], base_url="https://cloud.example.com/siren/v1")
+answers = client.apps.request_handler(os.environ["SIREN_SIGNING_SECRET"])
+
+@answers.on("postConversionAction", "tell-the-crm")
+def tell_the_crm(request):
+    # Siren may send it twice, so add it once, keyed by request.id.
+    add_to_crm(request.id, request.data["conversion"], request.data["reward"])
+
+app = Flask(__name__)
+app.add_url_rule("/siren", view_func=answers.flask, methods=["POST"])
+```
+
+Each other feature changes only the function. An action after an
+allocation:
+
+```python
+@answers.on("postAllocationAction", "note-the-share")
+def note_the_share(request):
+    # Siren may send it twice, so note it once, keyed by request.id.
+    note_share(request.id, request.data["allocation"])
+```
+
+A distribution resolver, an ask, returns its answer:
+
+```python
+@answers.on("distributionResolver", "split-by-score")
+def split_by_score(request):
+    pool, metrics = request.data["pool"], request.data["metrics"]
+    # Whole currency steps, never more than the pool, split evenly when every score is 0.
+    shares = client.apps.split_pool(pool, {m["metricId"]: m["score"] for m in metrics})
+    return {"outcome": "allocated", "units": pool["units"], "shares": shares}
+```
+
+An incentive resolver does the same with the conversions:
+
+```python
+@answers.on("incentiveResolver", "split-the-reward")
+def split_the_reward(request):
+    pool, conversions = request.data["pool"], request.data["conversions"]
+    rewards = client.apps.split_pool(pool, {c["conversionId"]: c["score"] for c in conversions})
+    return {"outcome": "rewards", "units": pool["units"], "rewards": rewards}
+```
+
+The handler checks each request the way `apps.verify_request()` does, then
+replies:
+
+| Request | Reply |
+|---|---|
+| Not a POST | 405 |
+| A body over 1 MiB, more than Siren sends | 413, read no further |
+| A body a parser already read, so the signed bytes are gone | 500, and `on_error` gets a `SirenError` that says to mount the handler before the JSON parser |
+| A signature that is missing or wrong, or a time outside `tolerance_seconds` | 401 |
+| A signed body that is not JSON, or not an app request of version 1 | 400 |
+| A tell with a function | 200 once the function returns, 500 when it raises, so Siren sends it again |
+| An ask with a function | 200 at once. The function runs after the reply, and the handler posts what it returns |
+| A kind and key with no function | 404 `No function handles <kind> <key>.`, so Siren shows the request under Needs attention once its sends run out |
+| Another `X-Siren-Event`, such as `conversion.approved` | 200 once the `on_event` function returns, 500 when it raises, and 200 when there is none |
+
+Every reply is JSON with `Cache-Control: no-store`.
+
+An ask's answer is checked the way `apps.requests.answer()` checks one, then
+posted to `POST /apps/requests/{id}/answer`. The post is sent again after a
+lost connection, a 429 or a 5xx, up to the client's `max_retries`, since the
+same answer goes each time and Siren takes it again as a duplicate. A
+refusal, such as 422 `app_answer_invalid` or 409
+`app_request_already_answered`, goes to `on_error` and is not sent again. A
+function that returns `None` posts nothing, and the app answers later with
+`apps.requests.answer()`.
+
+Register functions three ways:
+
+```python
+answers.on("distributionResolver", "split-by-score", split)  # one feature, and calls chain
+answers.on("distributionResolver", split)                    # every feature of the kind
+answers.on_event("conversion.approved", noted)               # a webhook at the same address
+```
+
+Each also works as a decorator, as above. A function for the key wins over
+one for the kind. An `async def` function is awaited.
+
+Mount the handler on any of these:
+
+```python
+app.add_url_rule("/siren", view_func=answers.flask, methods=["POST"])  # Flask
+path("siren", answers.django)                                           # Django, already csrf_exempt
+app.add_route("/siren", answers.asgi, methods=["POST"])                 # FastAPI, Starlette
+answers.wsgi                                                            # any WSGI server
+reply = answers(raw_body, headers, method="POST")                       # anything else
+```
+
+The plain call returns an `AppRequestReply` with `status`, `body`,
+`headers`, `content` and `after`. For an ask, send the reply, then call
+`reply.after()`. Flask and WSGI run an ask's work once the server has sent
+the reply, ASGI runs it after the reply in the same call, and Django starts
+it on a thread. On a host that stops work once it has replied, pass
+`run_later`, which is handed the work as a callable with no arguments, such
+as a queue's add. `on_error(error, request)` gets every failure the reply
+can't show, and logs to the `siren` logger by default.
+
+`apps.split_pool(pool, weights)` splits the pool a resolver is offered.
+`weights` maps each id to a weight, or is a list of `(id, weight)` pairs. It
+returns `{str(id): amount}`, each a whole step of the currency (a cent for
+dollars, a yen for yen), rounded down so the sum never passes
+`pool["value"]`, and splits evenly when every weight is 0. It raises
+`ValueError` for a negative or non-finite weight. The question and answer
+of each kind have types, such as `siren.AppDistributionQuestion` and
+`siren.AppRewardAnswer`.
+
+#### Check and answer by hand
+
+An app that queues the work, or answers after a person decides, checks a
+request with `apps.verify_request()` and answers an ask with
+`apps.requests.answer()`. The handler calls both inside.
 
 ```python
 import siren
@@ -398,6 +518,10 @@ if request.is_ask and request.item["kind"] == AppItemKind.INCENTIVE_RESOLVER:
 - **App tokens** — `events.ingest` trades the app's key for a short-lived
   token and keeps it fresh, and `events.browser_token_handler()` gives a page
   a browser token for one event, as a plain call, a WSGI app or an ASGI app.
+- **App request handler** — `apps.request_handler()` checks what Siren sends
+  an app, runs the function for each feature, replies, and posts an ask's
+  answer, as a Flask or Django view, an ASGI or WSGI app, or a plain call.
+  `apps.split_pool()` splits a resolver's pool in whole currency steps.
 - **One-call webhook verification** — `webhooks.construct_event` verifies the
   HMAC-SHA256 signature in constant time and parses the payload.
 - **Subscription management** — create, list, and delete subscriptions with an

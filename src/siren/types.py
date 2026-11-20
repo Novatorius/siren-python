@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, Iterator, List, Optional
+from typing import Any, Dict, Iterator, List, Optional, TypedDict
 
 
 class WebhookEventType(str, Enum):
@@ -306,3 +306,114 @@ class ListPage:
 
     def __getitem__(self, index: int) -> Dict[str, Any]:
         return self.data[index]
+
+
+# What Siren asks each kind of app feature, and what it takes back. Each is
+# the request's ``data``, or the answer an ask's function returns, with
+# Siren's own key names. Siren's fixture
+# tests/Fixtures/apps-feature-contracts/requests.json holds an example of each.
+
+
+class AppCurrency(TypedDict):
+    """A currency as Siren's API sends one. A shown amount is
+    ``value / 10 ** scale``, and the smallest part a person sees is
+    ``10 ** (scale - decimalPlaces)`` in the stored form."""
+
+    id: str
+    symbol: str
+    position: str
+    name: str
+    scale: int
+    decimalPlaces: int
+    type: str
+
+
+class AppAmount(TypedDict):
+    """An amount in the stored integer form, with its currency."""
+
+    value: int
+    units: str
+    currency: AppCurrency
+
+
+class AppDistributionPool(AppAmount):
+    """What a distribution question offers. ``value`` is ``total`` less
+    ``paid``, what the distribution's collaborators already hold from it."""
+
+    total: int
+    paid: int
+
+
+class AppDistributionMetric(TypedDict):
+    metricId: int
+    collaboratorId: int
+    score: float
+    triggerCount: int
+
+
+class AppDistributionQuestion(TypedDict):
+    """``distributionResolver`` (an ask): split ``pool`` among ``metrics``."""
+
+    distribution: Dict[str, Any]
+    distributor: Dict[str, Any]
+    pool: AppDistributionPool
+    metrics: List[AppDistributionMetric]
+
+
+class AppDistributionAnswer(TypedDict):
+    """One share per metric id, 0 or more, each a whole step of the
+    currency, adding up to at most ``pool.value``. ``outcome`` is
+    ``allocated`` and ``units`` the pool's units."""
+
+    outcome: str
+    units: str
+    shares: Dict[str, int]
+
+
+class AppRewardConversion(TypedDict):
+    conversionId: int
+    engagementId: int
+    collaboratorId: int
+    collaboratorStatus: str
+    score: float
+    engagementCreatedDate: str
+
+
+class AppRewardQuestion(TypedDict):
+    """``incentiveResolver`` (an ask): reward the ``conversions`` one award
+    made from ``pool``. ``reason`` is ``sale``, or ``refund`` when a partial
+    refund asks again. ``transaction`` is ``None`` for a lead."""
+
+    reason: str
+    program: Dict[str, Any]
+    conversionType: str
+    transaction: Optional[Dict[str, Any]]
+    pool: AppAmount
+    conversions: List[AppRewardConversion]
+
+
+class AppRewardAnswer(TypedDict):
+    """A key for every conversion id of the question, ``None`` for one the
+    app did not choose or a whole number of 0 or more. ``outcome`` is
+    ``rewards`` and ``units`` the pool's units."""
+
+    outcome: str
+    units: str
+    rewards: Dict[str, Optional[int]]
+
+
+class AppConversionActionData(TypedDict):
+    """``postConversionAction`` (a tell): the conversion, its reward and
+    its program."""
+
+    conversion: Dict[str, Any]
+    reward: AppAmount
+    program: Dict[str, Any]
+
+
+class AppAllocationActionData(TypedDict):
+    """``postAllocationAction`` (a tell): the allocation and its
+    distributor."""
+
+    allocation: Dict[str, Any]
+    distributor: Dict[str, Any]
