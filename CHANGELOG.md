@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `AppItemKind.COLLABORATOR_GROUP_STRUCTURE` (`collaboratorGroupStructure`),
+  the feature kind a collaborator group picks to let the app give the group's
+  shape. Siren asks it once per cascade trigger on the group, for a program
+  or a distributor. The types `AppCollaboratorGroupStructureQuestion`,
+  `AppCollaboratorGroupStructureDistributorQuestion`,
+  `AppCollaboratorGroupMember`, `AppCollaboratorGroupChain`,
+  `AppCollaboratorGroupTree` and `AppCollaboratorGroupStructureAnswer`
+  describe the question and its answer, a chain or a tree. Siren refuses an
+  answer that leaves out or repeats a member, names one outside the group, or
+  makes a cycle with 422 `app_answer_invalid`. The README shows the question
+  and both answers.
 - `apps.request_handler(signing_secret, *, tolerance_seconds, run_later,
   on_error)` returns an `AppRequestHandler`, one address for everything
   Siren sends an app. Register a function per feature with

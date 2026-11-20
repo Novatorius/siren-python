@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, Iterator, List, Optional, TypedDict
+from typing import Any, Dict, Iterator, List, Literal, Optional, TypedDict, Union
 
 
 class WebhookEventType(str, Enum):
@@ -142,6 +142,15 @@ class AppItemKind(str, Enum):
     with the pool's units and every conversion id of the question, each a
     whole number of 0 or more or ``None``. The rewards wait for the answer,
     24 hours from the first ask at most.
+
+    A collaborator group structure (``COLLABORATOR_GROUP_STRUCTURE``) gives a
+    collaborator group's shape. Siren asks it once per cascade trigger on the
+    group, for a program or a distributor. It answers a chain,
+    ``{"outcome": "structure", "shape": "chain", "order": [63, 57, 42]}``,
+    with every member's collaborator id once, top first, or a tree,
+    ``{"outcome": "structure", "shape": "tree", "parents": {"42": 57, "57": 63, "63": None}}``,
+    with every member's id once as a key, each mapped to another member's id
+    or ``None`` for a top member, and no cycle.
     """
 
     POST_CONVERSION_ACTION = "postConversionAction"
@@ -152,6 +161,7 @@ class AppItemKind(str, Enum):
     METRIC_CALCULATION = "metricCalculation"
     METRIC_FILTER = "metricFilter"
     INCENTIVE_RESOLVER = "incentiveResolver"
+    COLLABORATOR_GROUP_STRUCTURE = "collaboratorGroupStructure"
 
     def __str__(self) -> str:
         return self.value
@@ -400,6 +410,76 @@ class AppRewardAnswer(TypedDict):
     outcome: str
     units: str
     rewards: Dict[str, Optional[int]]
+
+
+class AppCollaboratorGroupMember(TypedDict):
+    """One member of a collaborator group in a group structure question."""
+
+    collaboratorId: int
+    name: str
+    metadata: Dict[str, Any]
+
+
+# ``for`` is a Python keyword, so the question uses the functional form.
+AppCollaboratorGroupStructureQuestion = TypedDict(
+    "AppCollaboratorGroupStructureQuestion",
+    {
+        "group": Dict[str, Any],
+        "members": List[AppCollaboratorGroupMember],
+        "for": Dict[str, Any],
+        "triggeringCollaborator": Dict[str, Any],
+        "cause": Dict[str, Any],
+    },
+)
+AppCollaboratorGroupStructureQuestion.__doc__ = """``collaboratorGroupStructure`` (an ask): give
+the ``group``'s shape among its ``members``, once per cascade trigger on the
+group. ``for`` holds ``type``, ``program`` (an engagement cascade) or
+``distributor`` (a metric cascade), and ``id``. ``cause["id"]`` is 16 hex
+characters, the trigger's own random id. The question also carries the keys
+of the trigger it interrupts, which differ by side and are not listed here.
+:class:`AppCollaboratorGroupStructureDistributorQuestion` lists a
+distributor's."""
+
+
+class AppCollaboratorGroupStructureDistributorQuestion(AppCollaboratorGroupStructureQuestion):
+    """A group structure question for a distributor's metric cascade. It
+    carries a metric calculation's keys beside the group's, and its
+    ``cause`` holds ``id``, ``type`` and ``causeId`` as a metric's does.
+    ``opportunityId``, ``points`` and ``sale`` may be ``None``."""
+
+    distributor: Dict[str, Any]
+    distribution: Dict[str, Any]
+    metricType: str
+    distributorMetricTypeId: int
+    opportunityId: Optional[int]
+    points: Optional[int]
+    sale: Optional[Dict[str, Any]]
+
+
+class AppCollaboratorGroupChain(TypedDict):
+    """A chain answer: ``order`` lists every member's ``collaboratorId`` of
+    the question once, top of the chain first. Siren reads it as its
+    built-in linear chain. ``outcome`` is ``structure``."""
+
+    outcome: Literal["structure"]
+    shape: Literal["chain"]
+    order: List[int]
+
+
+class AppCollaboratorGroupTree(TypedDict):
+    """A tree answer: ``parents`` has every member's ``collaboratorId`` of
+    the question as text once, each mapped to another member's id or
+    ``None`` for a top member, with no cycle. Siren reads it as its parent
+    and child structure. ``outcome`` is ``structure``."""
+
+    outcome: Literal["structure"]
+    shape: Literal["tree"]
+    parents: Dict[str, Optional[int]]
+
+
+AppCollaboratorGroupStructureAnswer = Union[AppCollaboratorGroupChain, AppCollaboratorGroupTree]
+"""The answer to a ``collaboratorGroupStructure`` ask, a chain or a tree.
+Siren refuses one that breaks the rules with 422 ``app_answer_invalid``."""
 
 
 class AppConversionActionData(TypedDict):

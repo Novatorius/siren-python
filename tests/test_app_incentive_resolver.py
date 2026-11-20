@@ -18,6 +18,7 @@ REQUEST_ID = "apr_b79943ff8ca353ce5cf5312bb3fa66c7"
 
 def test_the_kinds_match_the_values_siren_stores():
     assert sorted(kind.value for kind in AppItemKind) == [
+        "collaboratorGroupStructure",
         "customEvent",
         "distributionResolver",
         "incentiveResolver",

@@ -415,8 +415,8 @@ returns `{str(id): amount}`, each a whole step of the currency (a cent for
 dollars, a yen for yen), rounded down so the sum never passes
 `pool["value"]`, and splits evenly when every weight is 0. It raises
 `ValueError` for a negative or non-finite weight. The question and answer
-of each kind have types, such as `siren.AppDistributionQuestion` and
-`siren.AppRewardAnswer`.
+of each kind have types, such as `siren.AppDistributionQuestion`,
+`siren.AppRewardAnswer` and `siren.AppCollaboratorGroupStructureAnswer`.
 
 #### Check and answer by hand
 
@@ -509,6 +509,46 @@ if request.is_ask and request.item["kind"] == AppItemKind.INCENTIVE_RESOLVER:
         for conversion in conversions
     }
     client.apps.requests.answer(request.id, {"outcome": "rewards", "units": pool["units"], "rewards": rewards})
+```
+
+A collaborator group structure (`AppItemKind.COLLABORATOR_GROUP_STRUCTURE`)
+gives a collaborator group's shape. Siren asks it once per cascade trigger on
+a group that picks it, for a program (an engagement cascade) or a distributor
+(a metric cascade). Its question, `siren.AppCollaboratorGroupStructureQuestion`,
+names the `group`, its `members` with each one's `collaboratorId`, `name` and
+`metadata`, what the cascade is `for`, the `triggeringCollaborator` and the
+`cause`, whose `id` is the trigger's own random id of 16 hex characters. It
+also carries the keys of the trigger it interrupts, so a distributor's ask
+carries a metric calculation's keys, typed as
+`siren.AppCollaboratorGroupStructureDistributorQuestion`:
+
+```json
+{"group": {"id": 4, "name": "Northeast team"},
+ "members": [{"collaboratorId": 42, "name": "Riley Rep", "metadata": {"rank": 3}},
+             {"collaboratorId": 57, "name": "Sam Lead", "metadata": {"rank": 2}},
+             {"collaboratorId": 63, "name": "Jo Manager", "metadata": {"rank": 1}}],
+ "for": {"type": "distributor", "id": 2},
+ "triggeringCollaborator": {"id": 42, "name": "Riley Rep"},
+ "cause": {"id": "9f2c4e1a7b3d5c60", "type": null, "causeId": null},
+ "distributor": {"id": 2, "name": "Partner leaderboard"},
+ "distribution": {"id": 21, "periodEnd": "2026-12-01T00:00:00+00:00"},
+ "metricType": "referredSiteVisit", "distributorMetricTypeId": 55,
+ "opportunityId": 615, "points": null, "sale": null}
+```
+
+The answer, `siren.AppCollaboratorGroupStructureAnswer`, is a chain or a tree.
+A chain's `order` lists every member's `collaboratorId` once, top of the
+chain first, and Siren reads it as its built-in linear chain. A tree's
+`parents` holds every member's `collaboratorId` as text once, each mapped to
+another member's id or to `None` for a top member, with no cycle, and Siren
+reads it as its parent and child structure. Siren refuses an answer that
+breaks these rules with 422 `app_answer_invalid`.
+
+```python
+if request.is_ask and request.item["kind"] == AppItemKind.COLLABORATOR_GROUP_STRUCTURE:
+    chain = {"outcome": "structure", "shape": "chain", "order": [63, 57, 42]}
+    tree = {"outcome": "structure", "shape": "tree", "parents": {"42": 57, "57": 63, "63": None}}
+    client.apps.requests.answer(request.id, tree if use_tree else chain)
 ```
 
 ## Features
