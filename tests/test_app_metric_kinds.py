@@ -23,6 +23,7 @@ def test_the_kinds_match_the_values_siren_stores():
         "payoutMethod",
         "postAllocationAction",
         "postConversionAction",
+        "transactionFilter",
     ]
     assert AppItemKind.METRIC_CALCULATION == "metricCalculation"
     assert AppItemKind.METRIC_FILTER == "metricFilter"

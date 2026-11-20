@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `AppItemKind.TRANSACTION_FILTER` (`transactionFilter`), the feature kind a
+  program or a distributor picks to let the app say which of a sale's own
+  lines count. Siren's catalog calls it a transaction compiler. Siren asks it
+  once per sale for each program or distributor that picks it, and a refund
+  reuses the stored answer. The types `AppTransactionFilterQuestion`,
+  `AppTransaction`, `AppTransactionLine` and `AppTransactionFilterAnswer`
+  describe the question and its answer, the ids of the lines to include.
+  Siren refuses a line id the question lacks with 422 `app_answer_invalid`.
+  The README shows the question and a handler that counts only `lineItem`
+  lines.
 - `apps.request_handler(signing_secret, *, tolerance_seconds, run_later,
   on_error)` returns an `AppRequestHandler`, one address for everything
   Siren sends an app. Register a function per feature with

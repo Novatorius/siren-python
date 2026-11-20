@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, Iterator, List, Optional, TypedDict
+from typing import Any, Dict, Iterator, List, Literal, Optional, TypedDict
 
 
 class WebhookEventType(str, Enum):
@@ -142,6 +142,13 @@ class AppItemKind(str, Enum):
     with the pool's units and every conversion id of the question, each a
     whole number of 0 or more or ``None``. The rewards wait for the answer,
     24 hours from the first ask at most.
+
+    A transaction filter (``TRANSACTION_FILTER``) says which of a sale's own
+    lines count, and Siren's catalog calls it a transaction compiler. Siren
+    asks it once per sale for each program or distributor that picks it. It
+    answers ``{"outcome": "filtered", "include": [5501, 5502]}``, the ids of
+    the question's lines to include, each at most once. An empty list
+    includes nothing, and Siren refuses an id the question lacks.
     """
 
     POST_CONVERSION_ACTION = "postConversionAction"
@@ -152,6 +159,7 @@ class AppItemKind(str, Enum):
     METRIC_CALCULATION = "metricCalculation"
     METRIC_FILTER = "metricFilter"
     INCENTIVE_RESOLVER = "incentiveResolver"
+    TRANSACTION_FILTER = "transactionFilter"
 
     def __str__(self) -> str:
         return self.value
@@ -400,6 +408,62 @@ class AppRewardAnswer(TypedDict):
     outcome: str
     units: str
     rewards: Dict[str, Optional[int]]
+
+
+class AppTransaction(TypedDict):
+    """The sale a transaction filter question is about: its ``id``, its
+    ``units`` and its currency, the same currency an incentive resolver
+    question carries."""
+
+    id: int
+    units: str
+    currency: AppCurrency
+
+
+class AppTransactionLine(TypedDict):
+    """One of a sale's own lines. ``value`` is the line's unit value, a
+    stored whole number in the transaction's units, and ``quantity`` a whole
+    number. ``productId`` is ``None`` when the line names no product."""
+
+    id: int
+    type: Literal["lineItem", "discount", "fee", "shipping", "tax"]
+    name: str
+    quantity: int
+    value: int
+    productId: Optional[str]
+
+
+# ``for`` is a Python keyword, so the question uses the functional form.
+AppTransactionFilterQuestion = TypedDict(
+    "AppTransactionFilterQuestion",
+    {
+        "for": Dict[str, Any],
+        "transaction": AppTransaction,
+        "lines": List[AppTransactionLine],
+        "distribution": Optional[Dict[str, Any]],
+        "refundDistribution": Optional[Dict[str, Any]],
+    },
+)
+AppTransactionFilterQuestion.__doc__ = """``transactionFilter`` (an ask): say which
+of the sale's own ``lines`` count, once per sale for each program or
+distributor that picks the filter. ``for`` holds ``type``, ``program`` or
+``distributor``, its ``id`` and its ``name``. The subject id is
+``{opportunityId}:{programId}:t{transactionId}`` for a program's lines and
+``{distributorId}:t{transactionId}`` for a distributor's. ``distribution`` is
+``None`` for a program, and for a distributor ``{"id": ...}``, the period the
+sale's value lands in. ``refundDistribution`` is ``None``, or the later period
+a refund came in while the ask was open. A refund reuses the stored answer,
+so Siren never sends refund lines."""
+
+
+class AppTransactionFilterAnswer(TypedDict):
+    """The ids of the question's lines that count, each at most once. An
+    empty list includes nothing. A line counts when any filter the record
+    picks includes it. Siren refuses an id the question lacks with 422
+    ``app_answer_invalid``. ``outcome`` is ``filtered``."""
+
+    outcome: Literal["filtered"]
+    include: List[int]
 
 
 class AppConversionActionData(TypedDict):

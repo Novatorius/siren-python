@@ -353,6 +353,16 @@ def split_the_reward(request):
     return {"outcome": "rewards", "units": pool["units"], "rewards": rewards}
 ```
 
+A transaction filter returns the ids of the sale's lines that count. This
+one counts only `lineItem` lines:
+
+```python
+@answers.on("transactionFilter", "plan-lines")
+def plan_lines(request):
+    lines = request.data["lines"]
+    return {"outcome": "filtered", "include": [line["id"] for line in lines if line["type"] == "lineItem"]}
+```
+
 The handler checks each request the way `apps.verify_request()` does, then
 replies:
 
@@ -415,8 +425,8 @@ returns `{str(id): amount}`, each a whole step of the currency (a cent for
 dollars, a yen for yen), rounded down so the sum never passes
 `pool["value"]`, and splits evenly when every weight is 0. It raises
 `ValueError` for a negative or non-finite weight. The question and answer
-of each kind have types, such as `siren.AppDistributionQuestion` and
-`siren.AppRewardAnswer`.
+of each kind have types, such as `siren.AppDistributionQuestion`,
+`siren.AppRewardAnswer` and `siren.AppTransactionFilterAnswer`.
 
 #### Check and answer by hand
 
@@ -483,6 +493,34 @@ most. Then Siren stops waiting: a sale's collaborators get no reward, and a
 refund cuts the rewards already made by the share refunded. An answer after
 that raises `ConflictError` with code `app_request_dropped`.
 
+A transaction filter (`AppItemKind.TRANSACTION_FILTER`) says which of a
+sale's own lines count. Siren's catalog calls it a transaction compiler.
+Siren asks it once per sale for each program or distributor that picks it.
+Its question, `siren.AppTransactionFilterQuestion`, names what the filter is
+`for`, the `transaction` with its `units` and `currency`, and the sale's
+`lines`. Each line has its `id`, its `type` (`lineItem`, `discount`, `fee`,
+`shipping` or `tax`), its `name`, a whole `quantity`, its unit `value` as a
+stored whole number in the transaction's units, and a `productId` or `None`.
+`distribution` is `None` for a program, and for a distributor the period the
+sale's value lands in. `refundDistribution` is `None`, or the later period a
+refund came in while the ask was open:
+
+```json
+{"for": {"type": "program", "id": 3, "name": "Partner program"},
+ "transaction": {"id": 3307, "units": "USD", "currency": {"id": "USD", "symbol": "$", "position": "before",
+                 "name": "US Dollar", "scale": 2, "decimalPlaces": 2, "type": "monetary"}},
+ "lines": [{"id": 5501, "type": "lineItem", "name": "Annual plan", "quantity": 1, "value": 12000, "productId": "prod_annual"},
+           {"id": 5502, "type": "shipping", "name": "Shipping", "quantity": 1, "value": 800, "productId": null}],
+ "distribution": null, "refundDistribution": null}
+```
+
+The answer, `siren.AppTransactionFilterAnswer`, is `outcome` `filtered` and,
+in `include`, the ids of the lines that count, each at most once. An empty
+list includes nothing. When a record picks more than one filter, a line
+counts when any of them includes it. Siren refuses an id the question lacks
+with 422 `app_answer_invalid`. A refund reuses the stored answer, so Siren
+never sends refund lines.
+
 ```python
 from siren import AppItemKind
 
@@ -509,6 +547,10 @@ if request.is_ask and request.item["kind"] == AppItemKind.INCENTIVE_RESOLVER:
         for conversion in conversions
     }
     client.apps.requests.answer(request.id, {"outcome": "rewards", "units": pool["units"], "rewards": rewards})
+
+if request.is_ask and request.item["kind"] == AppItemKind.TRANSACTION_FILTER:
+    include = [line["id"] for line in request.data["lines"] if line["type"] == "lineItem"]
+    client.apps.requests.answer(request.id, {"outcome": "filtered", "include": include})
 ```
 
 ## Features
