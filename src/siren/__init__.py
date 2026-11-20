@@ -37,6 +37,7 @@ from .scopes import LEDGER_READ_SCOPES, ApiKeyScope, event_scope
 from .types import (
     ApiKey,
     AppAnswerReceipt,
+    AppItemKind,
     AppRequest,
     BrowserToken,
     EventResult,
@@ -73,6 +74,7 @@ __all__ = [
     # Types
     "ApiKey",
     "AppAnswerReceipt",
+    "AppItemKind",
     "AppRequest",
     "BrowserToken",
     "EventResult",

@@ -337,6 +337,35 @@ code `app_request_already_answered`, and the first answer stands. When Siren
 takes no answer from the key, `AuthenticationError` carries
 `ErrorCode.APP_ANSWER_UNAUTHORIZED`.
 
+`AppItemKind` names each kind as `request.item["kind"]` carries it. The SDK
+checks only what every answer needs, so Siren checks the rest of each kind's
+answer and refuses one that doesn't fit with 422. A metric calculation
+(`AppItemKind.METRIC_CALCULATION`) scores a metric for a distributor and
+answers a score for each collaborator. Siren takes at most 50 results, each
+collaborator once and each in the organization and not in the trash, and each
+score a whole number of 0 or more. An empty list scores nobody. A metric
+filter (`AppItemKind.METRIC_FILTER`) answers whether one collaborator's metric
+counts: allow it, or suppress it with a plain text reason of 1 to 200
+characters.
+
+```python
+from siren import AppItemKind
+
+if request.is_ask and request.item["kind"] == AppItemKind.METRIC_CALCULATION:
+    client.apps.requests.answer(request.id, {
+        "outcome": "scores",
+        "results": [{"collaboratorId": 7, "score": 10}],
+    })
+
+if request.is_ask and request.item["kind"] == AppItemKind.METRIC_FILTER:
+    collaborator_id = request.data["collaborator"]["id"]
+    if owns_customer(collaborator_id):
+        answer = {"outcome": "suppress", "reason": "Customer already owned by a partner"}
+    else:
+        answer = {"outcome": "allow"}
+    client.apps.requests.answer(request.id, answer)
+```
+
 ## Features
 
 - **Event ingestion** — `events.sale`, `events.refund`, `events.site_visited`,

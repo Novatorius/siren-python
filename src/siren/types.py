@@ -124,6 +124,31 @@ class WebhookEvent:
     raw: Dict[str, Any] = field(default_factory=dict)
 
 
+class AppItemKind(str, Enum):
+    """The kinds of feature an app can add, as Siren stores an item's
+    ``kind`` and sends it in an app request's ``item["kind"]``.
+
+    A metric calculation (``METRIC_CALCULATION``) answers
+    ``{"outcome": "scores", "results": [{"collaboratorId": 7, "score": 10}]}``.
+    Siren takes at most 50 results, each collaborator once, each in the
+    organization and not in the trash, and each score a whole number of 0 or
+    more. An empty list scores nobody. A metric filter (``METRIC_FILTER``)
+    answers ``{"outcome": "allow"}``, or ``{"outcome": "suppress", "reason":
+    "..."}`` with a plain text reason of 1 to 200 characters.
+    """
+
+    POST_CONVERSION_ACTION = "postConversionAction"
+    POST_ALLOCATION_ACTION = "postAllocationAction"
+    PAYOUT_METHOD = "payoutMethod"
+    DISTRIBUTION_RESOLVER = "distributionResolver"
+    CUSTOM_EVENT = "customEvent"
+    METRIC_CALCULATION = "metricCalculation"
+    METRIC_FILTER = "metricFilter"
+
+    def __str__(self) -> str:
+        return self.value
+
+
 @dataclass(frozen=True)
 class AppRequest:
     """A request Siren signed and sent an app, as ``apps.verify_request()``
