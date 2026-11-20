@@ -497,7 +497,9 @@ that take the conversion, in the group's order, each with its active
 `engagements` on the opportunity, oldest first. The answer gives `programIds`,
 every program id of the question exactly once, in the order Siren tries them.
 The first program that converts wins the group. Nothing in the group is
-awarded until the answer, 24 hours from the first ask at most.
+awarded until the answer, 24 hours from the sale at most, and Siren asks about
+each sale when it happens. A renewal doesn't ask. It goes to the program in
+the group whose engagement is oldest.
 
 The rewards wait for the answer, 24 hours from the first ask about a sale at
 most. Then Siren stops waiting: a sale's collaborators get no reward, and a
