@@ -157,8 +157,9 @@ class AppItemKind(str, Enum):
     (``ENGAGEMENT_FILTER``) answers ``{"outcome": "allow"}``, or
     ``{"outcome": "suppress", "reason": "..."}`` with a plain text reason of
     1 to 200 characters, which Siren notes on the opportunity. Siren makes no
-    engagement until the answer, at most 24 hours from the trigger, or from
-    the sale that waits on the answer when that sale came first.
+    engagement until the answer, at most 24 hours from when Siren asked. When
+    a sale waits on the answer, the ask ends with that sale's wait, 24 hours
+    after the sale reached Siren.
 
     A program group structure (``PROGRAM_GROUP_SORTER``) orders a program
     group's programs for one sale or lead. It answers

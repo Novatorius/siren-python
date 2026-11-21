@@ -544,9 +544,11 @@ metric calculation. An empty list makes no engagement. An engagement filter
 for the `collaborator` it names: allow it, or suppress it with a plain text
 reason of 1 to 200 characters, which Siren notes on the opportunity. Siren
 makes no engagement until the answer, and a sale on that program and
-opportunity waits for it, at most 24 hours from the trigger, or from the sale
-that waits on the answer when that sale came first. Then the trigger makes no
-engagement and the sales award without it.
+opportunity waits for it. Siren waits at most 24 hours from when it asked.
+When a sale waits on the answer, the ask ends with that sale's wait, 24 hours
+after the sale reached Siren, which can be sooner, even for a calculation a
+filter's allow asked later. Then the trigger makes no engagement and the sales
+award without it.
 
 ```python
 from siren import AppItemKind
