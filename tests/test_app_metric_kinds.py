@@ -18,6 +18,8 @@ def test_the_kinds_match_the_values_siren_stores():
         "collaboratorGroupStructure",
         "customEvent",
         "distributionResolver",
+        "engagementCalculation",
+        "engagementFilter",
         "incentiveResolver",
         "metricCalculation",
         "metricFilter",
