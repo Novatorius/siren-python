@@ -536,8 +536,9 @@ awarded until the answer, 24 hours from the sale at most, and Siren asks about
 each sale when it happens. A renewal doesn't ask. It goes to the program in
 the group whose engagement is oldest.
 
-The rewards wait for the answer, 24 hours from the first ask about a sale at
-most. Then Siren stops waiting: a sale's collaborators get no reward, and a
+The rewards wait for the answer, at most 24 hours from when the sale's reward
+began to wait, or from the refund for a refund's ask. Then Siren stops waiting:
+a sale's collaborators get no reward, and a
 refund cuts the rewards already made by the share refunded. An answer after
 that raises `ConflictError` with code `app_request_dropped`.
 
@@ -553,8 +554,11 @@ metric calculation. An empty list makes no engagement. An engagement filter
 for the `collaborator` it names: allow it, or suppress it with a plain text
 reason of 1 to 200 characters, which Siren notes on the opportunity. Siren
 makes no engagement until the answer, and a sale on that program and
-opportunity waits for it, 24 hours from the first ask at most. Then the
-trigger makes no engagement and the sales award without it.
+opportunity waits for it. Siren waits at most 24 hours from when it asked.
+When a sale waits on the answer, the ask ends with that sale's wait, 24 hours
+after the sale reached Siren, which can be sooner, even for a calculation a
+filter's allow asked later. Then the trigger makes no engagement and the sales
+award without it.
 
 A transaction filter (`AppItemKind.TRANSACTION_FILTER`) says which of a
 sale's own lines count. Siren's catalog calls it a transaction compiler.

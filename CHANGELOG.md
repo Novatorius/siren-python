@@ -70,7 +70,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and `INCENTIVE_RESOLVER` (`incentiveResolver`), which a program picks to let
   the app split each sale's reward. The README shows the answer each of the
   three takes, and the 409 `app_request_dropped` Siren answers once it stopped
-  waiting, 24 hours after the first ask about a sale.
+  waiting, 24 hours after the sale's reward began to wait.
 - `apps.verify_request(raw_body, headers, secret, *, tolerance_seconds, now)`
   checks a request Siren signed and sent an app and returns an `AppRequest`.
   It checks `X-Siren-Event`, the `X-Siren-Signature-V2` signature over

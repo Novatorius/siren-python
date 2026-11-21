@@ -141,7 +141,7 @@ class AppItemKind(str, Enum):
     ``{"outcome": "rewards", "units": "USD", "rewards": {"1042": 900, "1043": None}}``,
     with the pool's units and every conversion id of the question, each a
     whole number of 0 or more or ``None``. The rewards wait for the answer,
-    24 hours from the first ask at most.
+    at most 24 hours from when the sale's reward began to wait.
 
     An incentive type (``INCENTIVE_TYPE``) decides which engagements one
     sale, lead or renewal converts on a program, and the pool the program's
@@ -157,7 +157,9 @@ class AppItemKind(str, Enum):
     (``ENGAGEMENT_FILTER``) answers ``{"outcome": "allow"}``, or
     ``{"outcome": "suppress", "reason": "..."}`` with a plain text reason of
     1 to 200 characters, which Siren notes on the opportunity. Siren makes no
-    engagement until the answer, 24 hours from the first ask at most.
+    engagement until the answer, at most 24 hours from when Siren asked. When
+    a sale waits on the answer, the ask ends with that sale's wait, 24 hours
+    after the sale reached Siren.
 
     A program group structure (``PROGRAM_GROUP_SORTER``) orders a program
     group's programs for one sale or lead. It answers
