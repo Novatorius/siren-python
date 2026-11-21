@@ -478,8 +478,8 @@ again about rewards already made. The answer gives the pool's `units`, and in
 0 or more or `None` for a collaborator who earns nothing. The rewards may add
 up to more than the pool.
 
-The rewards wait for the answer, 24 hours from the first ask about a sale at
-most. Then Siren stops waiting: a sale's collaborators get no reward, and a
+The rewards wait for the answer, at most 24 hours from when the sale's reward
+began to wait, or from the refund for a refund's ask. Then Siren stops waiting: a sale's collaborators get no reward, and a
 refund cuts the rewards already made by the share refunded. An answer after
 that raises `ConflictError` with code `app_request_dropped`.
 
@@ -495,8 +495,9 @@ metric calculation. An empty list makes no engagement. An engagement filter
 for the `collaborator` it names: allow it, or suppress it with a plain text
 reason of 1 to 200 characters, which Siren notes on the opportunity. Siren
 makes no engagement until the answer, and a sale on that program and
-opportunity waits for it, 24 hours from the first ask at most. Then the
-trigger makes no engagement and the sales award without it.
+opportunity waits for it, at most 24 hours from the trigger, or from the sale
+that waits on the answer when that sale came first. Then the trigger makes no
+engagement and the sales award without it.
 
 ```python
 from siren import AppItemKind

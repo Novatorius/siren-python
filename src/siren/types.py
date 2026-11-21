@@ -141,7 +141,7 @@ class AppItemKind(str, Enum):
     ``{"outcome": "rewards", "units": "USD", "rewards": {"1042": 900, "1043": None}}``,
     with the pool's units and every conversion id of the question, each a
     whole number of 0 or more or ``None``. The rewards wait for the answer,
-    24 hours from the first ask at most.
+    at most 24 hours from when the sale's reward began to wait.
 
     An engagement calculation (``ENGAGEMENT_CALCULATION``) answers who earns
     an engagement and its score, ``{"outcome": "engagements", "results":
@@ -150,7 +150,8 @@ class AppItemKind(str, Enum):
     (``ENGAGEMENT_FILTER``) answers ``{"outcome": "allow"}``, or
     ``{"outcome": "suppress", "reason": "..."}`` with a plain text reason of
     1 to 200 characters, which Siren notes on the opportunity. Siren makes no
-    engagement until the answer, 24 hours from the first ask at most.
+    engagement until the answer, at most 24 hours from the trigger, or from
+    the sale that waits on the answer when that sale came first.
     """
 
     POST_CONVERSION_ACTION = "postConversionAction"
