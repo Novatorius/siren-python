@@ -141,6 +141,40 @@
       },
       "answer": { "outcome": "allocated", "units": "USD", "shares": { "41": 6000, "43": 4000 } }
     },
+    "incentiveType": {
+      "item": { "key": "pay-on-closed-deals", "id": "app:16" },
+      "request": {
+        "version": 1,
+        "id": "apr_9c60190a4501399d0ae55f041c237b39",
+        "type": "app.request",
+        "mode": "ask",
+        "app": "acme-crm",
+        "item": { "kind": "incentiveType", "key": "pay-on-closed-deals", "id": "app:16" },
+        "createdAt": "2026-11-17T12:20:03+00:00",
+        "answerBy": "2026-11-17T13:20:03+00:00",
+        "answerUrl": "https://cloud.example.com/siren/v1/apps/requests/apr_9c60190a4501399d0ae55f041c237b39/answer",
+        "data": {
+          "reason": "sale",
+          "program": { "id": 3, "name": "Partner program", "units": "USD" },
+          "conversionType": "sale",
+          "opportunity": { "id": 615 },
+          "transaction": {
+            "id": 3307,
+            "status": "complete",
+            "units": "USD",
+            "currency": { "id": "USD", "symbol": "$", "position": "before", "name": "US Dollar", "scale": 2, "decimalPlaces": 2, "type": "monetary" },
+            "total": 15000,
+            "lines": [{ "id": 5501, "type": "lineItem", "name": "Annual plan", "quantity": 1, "value": 15000 }]
+          },
+          "binding": null,
+          "engagements": [
+            { "engagementId": 880, "collaboratorId": 42, "score": 60, "createdDate": "2026-11-02T09:15:00+00:00" },
+            { "engagementId": 881, "collaboratorId": 57, "score": 40, "createdDate": "2026-11-09T16:40:00+00:00" }
+          ]
+        }
+      },
+      "answer": { "outcome": "award", "units": "USD", "pool": 1500, "engagementIds": [880, 881] }
+    },
     "programGroupSorter": {
       "item": { "key": "pick-the-program", "id": "app:13" },
       "request": {

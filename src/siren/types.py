@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, Iterator, List, Optional, TypedDict
+from typing import Any, Dict, Iterator, List, Optional, TypedDict, Union
 
 
 class WebhookEventType(str, Enum):
@@ -143,6 +143,13 @@ class AppItemKind(str, Enum):
     whole number of 0 or more or ``None``. The rewards wait for the answer,
     24 hours from the first ask at most.
 
+    An incentive type (``INCENTIVE_TYPE``) decides which engagements one
+    sale, lead or renewal converts on a program, and the pool the program's
+    resolver divides. It answers ``{"outcome": "award", "units": "USD",
+    "pool": 1500, "engagementIds": [880, 881]}``, or ``{"outcome": "none"}``
+    to award nothing. The award waits for the answer, 24 hours from the first
+    ask at most.
+
     An engagement calculation (``ENGAGEMENT_CALCULATION``) answers who earns
     an engagement and its score, ``{"outcome": "engagements", "results":
     [{"collaboratorId": 7, "score": 10}]}``, with the same limits as a metric
@@ -167,6 +174,7 @@ class AppItemKind(str, Enum):
     METRIC_CALCULATION = "metricCalculation"
     METRIC_FILTER = "metricFilter"
     INCENTIVE_RESOLVER = "incentiveResolver"
+    INCENTIVE_TYPE = "incentiveType"
     ENGAGEMENT_CALCULATION = "engagementCalculation"
     ENGAGEMENT_FILTER = "engagementFilter"
     PROGRAM_GROUP_SORTER = "programGroupSorter"
@@ -418,6 +426,56 @@ class AppRewardAnswer(TypedDict):
     outcome: str
     units: str
     rewards: Dict[str, Optional[int]]
+
+
+class AppIncentiveTypeEngagement(TypedDict):
+    engagementId: int
+    collaboratorId: int
+    score: float
+    createdDate: str
+
+
+class _AppIncentiveTypeQuestionFields(TypedDict):
+    reason: str
+    program: Dict[str, Any]
+    conversionType: str
+    opportunity: Dict[str, int]
+    transaction: Optional[Dict[str, Any]]
+    binding: Optional[Dict[str, str]]
+    engagements: List[AppIncentiveTypeEngagement]
+
+
+class AppIncentiveTypeQuestion(_AppIncentiveTypeQuestionFields, total=False):
+    """``incentiveType`` (an ask): which engagements one sale, lead or
+    renewal converts on the ``program``, and the pool its resolver divides.
+    ``reason`` is ``sale`` until the award is made, and ``refund`` when a
+    partial refund asks again about an award already made, which then lists
+    the award's ``conversions``. ``transaction`` is ``None`` for a lead,
+    which names its ``binding`` instead. Its ``total`` and each line's
+    ``value`` are stored whole numbers."""
+
+    conversions: List[Dict[str, int]]
+
+
+class AppIncentiveTypeAwardAnswer(TypedDict):
+    """The engagements of the question that convert, each once, and the
+    ``pool``, a whole number of 0 or more in the program's ``units``.
+    ``outcome`` is ``award``."""
+
+    outcome: str
+    units: str
+    pool: int
+    engagementIds: List[int]
+
+
+class AppIncentiveTypeNoneAnswer(TypedDict):
+    """Award nothing on the program. ``outcome`` is ``none``."""
+
+    outcome: str
+
+
+AppIncentiveTypeAnswer = Union[AppIncentiveTypeAwardAnswer, AppIncentiveTypeNoneAnswer]
+"""The answer to an ``incentiveType`` ask."""
 
 
 class AppEngagementCause(TypedDict):
