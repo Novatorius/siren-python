@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, Iterator, List, Literal, Optional, TypedDict
+from typing import Any, Dict, Iterator, List, Literal, Optional, TypedDict, Union
 
 
 class WebhookEventType(str, Enum):
@@ -143,6 +143,28 @@ class AppItemKind(str, Enum):
     whole number of 0 or more or ``None``. The rewards wait for the answer,
     24 hours from the first ask at most.
 
+    An incentive type (``INCENTIVE_TYPE``) decides which engagements one
+    sale, lead or renewal converts on a program, and the pool the program's
+    resolver divides. It answers ``{"outcome": "award", "units": "USD",
+    "pool": 1500, "engagementIds": [880, 881]}``, or ``{"outcome": "none"}``
+    to award nothing. The award waits for the answer, 24 hours from the first
+    ask at most.
+
+    An engagement calculation (``ENGAGEMENT_CALCULATION``) answers who earns
+    an engagement and its score, ``{"outcome": "engagements", "results":
+    [{"collaboratorId": 7, "score": 10}]}``, with the same limits as a metric
+    calculation. An empty list makes no engagement. An engagement filter
+    (``ENGAGEMENT_FILTER``) answers ``{"outcome": "allow"}``, or
+    ``{"outcome": "suppress", "reason": "..."}`` with a plain text reason of
+    1 to 200 characters, which Siren notes on the opportunity. Siren makes no
+    engagement until the answer, 24 hours from the first ask at most.
+
+    A program group structure (``PROGRAM_GROUP_SORTER``) orders a program
+    group's programs for one sale or lead. It answers
+    ``{"outcome": "sorted", "programIds": [9, 12]}``, every program id of the
+    question exactly once. The first program that converts wins the group,
+    which waits for the answer, 24 hours from the sale at most.
+
     A transaction filter (``TRANSACTION_FILTER``) says which of a sale's own
     lines count, and Siren's catalog calls it a transaction compiler. Siren
     asks it once per sale for each program or distributor that picks it. It
@@ -159,6 +181,10 @@ class AppItemKind(str, Enum):
     METRIC_CALCULATION = "metricCalculation"
     METRIC_FILTER = "metricFilter"
     INCENTIVE_RESOLVER = "incentiveResolver"
+    INCENTIVE_TYPE = "incentiveType"
+    ENGAGEMENT_CALCULATION = "engagementCalculation"
+    ENGAGEMENT_FILTER = "engagementFilter"
+    PROGRAM_GROUP_SORTER = "programGroupSorter"
     TRANSACTION_FILTER = "transactionFilter"
 
     def __str__(self) -> str:
@@ -408,6 +434,144 @@ class AppRewardAnswer(TypedDict):
     outcome: str
     units: str
     rewards: Dict[str, Optional[int]]
+
+
+class AppIncentiveTypeEngagement(TypedDict):
+    engagementId: int
+    collaboratorId: int
+    score: float
+    createdDate: str
+
+
+class _AppIncentiveTypeQuestionFields(TypedDict):
+    reason: str
+    program: Dict[str, Any]
+    conversionType: str
+    opportunity: Dict[str, int]
+    transaction: Optional[Dict[str, Any]]
+    binding: Optional[Dict[str, str]]
+    engagements: List[AppIncentiveTypeEngagement]
+
+
+class AppIncentiveTypeQuestion(_AppIncentiveTypeQuestionFields, total=False):
+    """``incentiveType`` (an ask): which engagements one sale, lead or
+    renewal converts on the ``program``, and the pool its resolver divides.
+    ``reason`` is ``sale`` until the award is made, and ``refund`` when a
+    partial refund asks again about an award already made, which then lists
+    the award's ``conversions``. ``transaction`` is ``None`` for a lead,
+    which names its ``binding`` instead. Its ``total`` and each line's
+    ``value`` are stored whole numbers."""
+
+    conversions: List[Dict[str, int]]
+
+
+class AppIncentiveTypeAwardAnswer(TypedDict):
+    """The engagements of the question that convert, each once, and the
+    ``pool``, a whole number of 0 or more in the program's ``units``.
+    ``outcome`` is ``award``."""
+
+    outcome: str
+    units: str
+    pool: int
+    engagementIds: List[int]
+
+
+class AppIncentiveTypeNoneAnswer(TypedDict):
+    """Award nothing on the program. ``outcome`` is ``none``."""
+
+    outcome: str
+
+
+AppIncentiveTypeAnswer = Union[AppIncentiveTypeAwardAnswer, AppIncentiveTypeNoneAnswer]
+"""The answer to an ``incentiveType`` ask."""
+
+
+class AppEngagementCause(TypedDict):
+    """The trigger behind an engagement ask. ``id`` is the trigger's own
+    random id, ``event`` the engagement type that fired, and ``occurredAt``
+    an ISO 8601 time that dates the engagements the answer makes."""
+
+    id: str
+    event: str
+    occurredAt: str
+
+
+class AppEngagementCalculationQuestion(TypedDict):
+    """``engagementCalculation`` (an ask): who earns an engagement, and its
+    score, when a program's engagement type triggers. ``args`` holds the
+    settings a person gave the engagement type, as text by name.
+    ``opportunity["customerId"]`` is the customer Siren matched, or ``None``."""
+
+    program: Dict[str, Any]
+    engagementType: str
+    programEngagementTypeId: int
+    args: Dict[str, str]
+    opportunity: Dict[str, Any]
+    triggeringCollaborator: Dict[str, Any]
+    cause: AppEngagementCause
+
+
+class AppEngagementCalculationAnswer(TypedDict):
+    """Who earns an engagement and its score, at most 50 results, each
+    collaborator once and each score a whole number of 0 or more.
+    ``outcome`` is ``engagements``."""
+
+    outcome: str
+    results: List[Dict[str, int]]
+
+
+class AppEngagementFilterQuestion(TypedDict):
+    """``engagementFilter`` (an ask): whether an engagement may be made for
+    ``collaborator`` on ``program``."""
+
+    program: Dict[str, Any]
+    collaborator: Dict[str, Any]
+    opportunity: Dict[str, Any]
+    engagementType: str
+    cause: AppEngagementCause
+
+
+class AppEngagementFilterAnswer(TypedDict, total=False):
+    """``outcome`` is ``allow`` or ``suppress``. A suppress gives a plain
+    text ``reason`` of 1 to 200 characters."""
+
+    outcome: str
+    reason: str
+
+
+class AppGroupOrderEngagement(TypedDict):
+    engagementId: int
+    collaboratorId: int
+    score: float
+    createdDate: str
+
+
+class AppGroupOrderProgram(TypedDict):
+    id: int
+    name: str
+    engagements: List[AppGroupOrderEngagement]
+
+
+class AppGroupOrderQuestion(TypedDict):
+    """``programGroupSorter`` (an ask): order the group's ``programs`` for
+    one sale or lead. ``programs`` holds each program of the group that takes
+    the conversion once, in the group's order, with its active engagements on
+    the opportunity, oldest first. ``transaction`` is ``None`` for a lead, and
+    its ``total`` is a stored whole number."""
+
+    group: Dict[str, Any]
+    conversionType: str
+    opportunity: Dict[str, Any]
+    transaction: Optional[Dict[str, Any]]
+    programs: List[AppGroupOrderProgram]
+
+
+class AppGroupOrderAnswer(TypedDict):
+    """Every program id of the question exactly once, in the order Siren
+    tries them. ``outcome`` is ``sorted``."""
+
+    outcome: str
+    programIds: List[int]
 
 
 class AppTransaction(TypedDict):

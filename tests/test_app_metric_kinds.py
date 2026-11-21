@@ -17,12 +17,16 @@ def test_the_kinds_match_the_values_siren_stores():
     assert sorted(kind.value for kind in AppItemKind) == [
         "customEvent",
         "distributionResolver",
+        "engagementCalculation",
+        "engagementFilter",
         "incentiveResolver",
+        "incentiveType",
         "metricCalculation",
         "metricFilter",
         "payoutMethod",
         "postAllocationAction",
         "postConversionAction",
+        "programGroupSorter",
         "transactionFilter",
     ]
     assert AppItemKind.METRIC_CALCULATION == "metricCalculation"

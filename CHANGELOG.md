@@ -38,6 +38,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   whole steps of the currency, rounded down so the sum never passes the
   pool, and evenly when every weight is 0. It raises `ValueError` for a
   negative or non-finite weight.
+- `AppItemKind.INCENTIVE_TYPE` (`incentiveType`), the kind a program picks as
+  its incentive type to let the app decide which engagements each sale, lead
+  or renewal converts and the pool the program's resolver divides, with the
+  types `AppIncentiveTypeQuestion`, `AppIncentiveTypeEngagement`,
+  `AppIncentiveTypeAwardAnswer`, `AppIncentiveTypeNoneAnswer` and
+  `AppIncentiveTypeAnswer`, `{"outcome": "award", "units": ..., "pool": ...,
+  "engagementIds": [...]}` or `{"outcome": "none"}`. The README shows the
+  handler's sample for it.
+- `AppItemKind.ENGAGEMENT_CALCULATION` (`engagementCalculation`) and
+  `AppItemKind.ENGAGEMENT_FILTER` (`engagementFilter`), the kinds a program's
+  engagement type and a program pick to let the app decide who earns each
+  engagement and whether it is made, with the types
+  `AppEngagementCalculationQuestion`, `AppEngagementCalculationAnswer`,
+  `AppEngagementFilterQuestion`, `AppEngagementFilterAnswer` and
+  `AppEngagementCause`. The README shows the answer each takes.
+- `AppItemKind.PROGRAM_GROUP_SORTER` (`programGroupSorter`), the kind a
+  program group picks as its structure to let the app order its programs for
+  each sale or lead, with the types `AppGroupOrderQuestion`,
+  `AppGroupOrderProgram`, `AppGroupOrderEngagement` and `AppGroupOrderAnswer`,
+  `{"outcome": "sorted", "programIds": [...]}`. The README shows the
+  handler's sample for it.
 - Types for each feature kind's question and answer: `AppDistributionQuestion`,
   `AppDistributionAnswer`, `AppRewardQuestion`, `AppRewardAnswer`,
   `AppConversionActionData`, `AppAllocationActionData`, and the `AppCurrency`,
