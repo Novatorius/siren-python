@@ -548,7 +548,10 @@ names the `group`, its `members` with each one's `collaboratorId`, `name` and
 `cause`, whose `id` is the trigger's own random id of 16 hex characters. It
 also carries the keys of the trigger it interrupts, so a distributor's ask
 carries a metric calculation's keys, typed as
-`siren.AppCollaboratorGroupStructureDistributorQuestion`:
+`siren.AppCollaboratorGroupStructureDistributorQuestion`. A program's ask carries an
+engagement calculation's keys (`program`, `engagementType`, `programEngagementTypeId`,
+`args`, `opportunity`) and an engagement's `cause`, typed as
+`siren.AppCollaboratorGroupStructureProgramQuestion`. A distributor's looks like this:
 
 ```json
 {"group": {"id": 4, "name": "Northeast team"},

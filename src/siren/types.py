@@ -502,7 +502,8 @@ group. ``for`` holds ``type``, ``program`` (an engagement cascade) or
 characters, the trigger's own random id. The question also carries the keys
 of the trigger it interrupts, which differ by side and are not listed here.
 :class:`AppCollaboratorGroupStructureDistributorQuestion` lists a
-distributor's."""
+distributor's and :class:`AppCollaboratorGroupStructureProgramQuestion` a
+program's."""
 
 
 class AppCollaboratorGroupStructureDistributorQuestion(AppCollaboratorGroupStructureQuestion):
@@ -518,6 +519,21 @@ class AppCollaboratorGroupStructureDistributorQuestion(AppCollaboratorGroupStruc
     opportunityId: Optional[int]
     points: Optional[int]
     sale: Optional[Dict[str, Any]]
+
+
+class AppCollaboratorGroupStructureProgramQuestion(AppCollaboratorGroupStructureQuestion):
+    """A group structure question for a program's engagement cascade. It
+    carries an engagement calculation's keys beside the group's, and its
+    ``cause`` is an engagement's. ``args`` holds the settings a person gave
+    the engagement type, as text by name, or an empty dict.
+    ``opportunity["customerId"]`` may be ``None``."""
+
+    program: Dict[str, Any]
+    engagementType: str
+    programEngagementTypeId: int
+    args: Dict[str, str]
+    opportunity: Dict[str, Any]
+    cause: AppEngagementCause
 
 
 class AppCollaboratorGroupChain(TypedDict):
