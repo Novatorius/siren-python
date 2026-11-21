@@ -23,11 +23,13 @@ def test_the_kinds_match_the_values_siren_stores():
         "engagementCalculation",
         "engagementFilter",
         "incentiveResolver",
+        "incentiveType",
         "metricCalculation",
         "metricFilter",
         "payoutMethod",
         "postAllocationAction",
         "postConversionAction",
+        "programGroupSorter",
     ]
     assert AppItemKind.INCENTIVE_RESOLVER == "incentiveResolver"
     assert siren.AppItemKind is AppItemKind

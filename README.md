@@ -353,6 +353,29 @@ def split_the_reward(request):
     return {"outcome": "rewards", "units": pool["units"], "rewards": rewards}
 ```
 
+An incentive type chooses the engagements that convert and the pool the
+program's resolver divides, or answers `none`:
+
+```python
+@answers.on("incentiveType", "pay-on-closed-deals")
+def pay_on_closed_deals(request):
+    sale, ids = request.data["transaction"], [e["engagementId"] for e in request.data["engagements"]]
+    if not sale or sale["units"] != request.data["program"]["units"]:
+        return {"outcome": "none"}  # A lead earns nothing here.
+    return {"outcome": "award", "units": sale["units"], "pool": sale["total"] // 10, "engagementIds": ids}
+```
+
+A program group structure returns every program of the group once, in the
+order Siren tries them:
+
+```python
+@answers.on("programGroupSorter", "pick-the-program")
+def pick_the_program(request):
+    # Try the program whose best engagement scores highest first.
+    best = {p["id"]: max([0] + [e["score"] for e in p["engagements"]]) for p in request.data["programs"]}
+    return {"outcome": "sorted", "programIds": sorted(best, key=best.get, reverse=True)}
+```
+
 The handler checks each request the way `apps.verify_request()` does, then
 replies:
 
@@ -478,8 +501,34 @@ again about rewards already made. The answer gives the pool's `units`, and in
 0 or more or `None` for a collaborator who earns nothing. The rewards may add
 up to more than the pool.
 
+An incentive type (`AppItemKind.INCENTIVE_TYPE`) decides a program's award
+for one sale, lead or renewal, for the conversions its `conversionTypes`
+setting lists. Its question holds the `program` with its `units`, the
+`conversionType`, the `opportunity`, the `transaction` (`None` for a lead,
+which names its `binding` instead) with its `total` and `lines` as stored whole
+numbers, and the `engagements` the program holds on the opportunity. The answer
+gives the program's `units`, a `pool` of 0 or more and `engagementIds`, the
+question's engagements that convert, each once. The program's resolver divides
+the pool among them. `{"outcome": "none"}` awards nothing. A partial refund of
+an award already made asks again with `reason` `refund` and the award's
+`conversions`, and its answer changes only the pool. The program awards
+nothing until the answer, 24 hours from the first ask at most.
+
+A program group structure (`AppItemKind.PROGRAM_GROUP_SORTER`) orders a
+program group's programs for one sale or lead. Its question holds the `group`,
+the `conversionType`, the `opportunity`, the `transaction` (`None` for a lead)
+with its `total` as a stored whole number, and the `programs` of the group
+that take the conversion, in the group's order, each with its active
+`engagements` on the opportunity, oldest first. The answer gives `programIds`,
+every program id of the question exactly once, in the order Siren tries them.
+The first program that converts wins the group. Nothing in the group is
+awarded until the answer, 24 hours from the sale at most, and Siren asks about
+each sale when it happens. A renewal doesn't ask. It goes to the program in
+the group whose engagement is oldest.
+
 The rewards wait for the answer, at most 24 hours from when the sale's reward
-began to wait, or from the refund for a refund's ask. Then Siren stops waiting: a sale's collaborators get no reward, and a
+began to wait, or from the refund for a refund's ask. Then Siren stops waiting:
+a sale's collaborators get no reward, and a
 refund cuts the rewards already made by the share refunded. An answer after
 that raises `ConflictError` with code `app_request_dropped`.
 
