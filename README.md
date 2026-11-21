@@ -506,6 +506,21 @@ most. Then Siren stops waiting: a sale's collaborators get no reward, and a
 refund cuts the rewards already made by the share refunded. An answer after
 that raises `ConflictError` with code `app_request_dropped`.
 
+An engagement calculation (`AppItemKind.ENGAGEMENT_CALCULATION`) is asked
+each time an engagement triggers for a program whose engagement type picks
+it. Its question holds the `program`, the `engagementType`, the `args` a
+person gave that engagement type, the `opportunity` with the `customerId`
+Siren matched it to (or `None`), the `triggeringCollaborator` and the
+`cause`, whose `occurredAt` dates the engagements the answer makes. It
+answers who earns an engagement and its score, with the same limits as a
+metric calculation. An empty list makes no engagement. An engagement filter
+(`AppItemKind.ENGAGEMENT_FILTER`) answers whether an engagement may be made
+for the `collaborator` it names: allow it, or suppress it with a plain text
+reason of 1 to 200 characters, which Siren notes on the opportunity. Siren
+makes no engagement until the answer, and a sale on that program and
+opportunity waits for it, 24 hours from the first ask at most. Then the
+trigger makes no engagement and the sales award without it.
+
 ```python
 from siren import AppItemKind
 
@@ -532,6 +547,19 @@ if request.is_ask and request.item["kind"] == AppItemKind.INCENTIVE_RESOLVER:
         for conversion in conversions
     }
     client.apps.requests.answer(request.id, {"outcome": "rewards", "units": pool["units"], "rewards": rewards})
+
+if request.is_ask and request.item["kind"] == AppItemKind.ENGAGEMENT_CALCULATION:
+    client.apps.requests.answer(request.id, {
+        "outcome": "engagements",
+        "results": [{"collaboratorId": request.data["triggeringCollaborator"]["id"], "score": 10}],
+    })
+
+if request.is_ask and request.item["kind"] == AppItemKind.ENGAGEMENT_FILTER:
+    if is_staff(request.data["collaborator"]["id"]):
+        answer = {"outcome": "suppress", "reason": "The visitor works for the partner."}
+    else:
+        answer = {"outcome": "allow"}
+    client.apps.requests.answer(request.id, answer)
 ```
 
 ## Features
