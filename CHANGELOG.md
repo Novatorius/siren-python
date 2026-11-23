@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `AppItemKind.TRANSACTION_FILTER` (`transactionFilter`), the feature kind a
+  program or a distributor picks to let the app say which of a sale's own
+  lines count. Siren's catalog calls it a transaction compiler. Siren asks it
+  once per sale for each program or distributor that picks it, and a refund
+  reuses the stored answer. The types `AppTransactionFilterQuestion`,
+  `AppTransaction`, `AppTransactionLine` and `AppTransactionFilterAnswer`
+  describe the question and its answer, the ids of the lines to include.
+  Siren refuses a line id the question lacks with 422 `app_answer_invalid`.
+  The README shows the question and a handler that counts only `lineItem`
+  lines.
 - `AppItemKind.COLLABORATOR_GROUP_STRUCTURE` (`collaboratorGroupStructure`),
   the feature kind a collaborator group picks to let the app give the group's
   shape. Siren asks it once per cascade trigger on the group, for a program
@@ -40,6 +50,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   whole steps of the currency, rounded down so the sum never passes the
   pool, and evenly when every weight is 0. It raises `ValueError` for a
   negative or non-finite weight.
+- `AppItemKind.INCENTIVE_TYPE` (`incentiveType`), the kind a program picks as
+  its incentive type to let the app decide which engagements each sale, lead
+  or renewal converts and the pool the program's resolver divides, with the
+  types `AppIncentiveTypeQuestion`, `AppIncentiveTypeEngagement`,
+  `AppIncentiveTypeAwardAnswer`, `AppIncentiveTypeNoneAnswer` and
+  `AppIncentiveTypeAnswer`, `{"outcome": "award", "units": ..., "pool": ...,
+  "engagementIds": [...]}` or `{"outcome": "none"}`. The README shows the
+  handler's sample for it.
 - `AppItemKind.ENGAGEMENT_CALCULATION` (`engagementCalculation`) and
   `AppItemKind.ENGAGEMENT_FILTER` (`engagementFilter`), the kinds a program's
   engagement type and a program pick to let the app decide who earns each
@@ -47,6 +65,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `AppEngagementCalculationQuestion`, `AppEngagementCalculationAnswer`,
   `AppEngagementFilterQuestion`, `AppEngagementFilterAnswer` and
   `AppEngagementCause`. The README shows the answer each takes.
+- `AppItemKind.PROGRAM_GROUP_SORTER` (`programGroupSorter`), the kind a
+  program group picks as its structure to let the app order its programs for
+  each sale or lead, with the types `AppGroupOrderQuestion`,
+  `AppGroupOrderProgram`, `AppGroupOrderEngagement` and `AppGroupOrderAnswer`,
+  `{"outcome": "sorted", "programIds": [...]}`. The README shows the
+  handler's sample for it.
 - Types for each feature kind's question and answer: `AppDistributionQuestion`,
   `AppDistributionAnswer`, `AppRewardQuestion`, `AppRewardAnswer`,
   `AppConversionActionData`, `AppAllocationActionData`, and the `AppCurrency`,
@@ -58,7 +82,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and `INCENTIVE_RESOLVER` (`incentiveResolver`), which a program picks to let
   the app split each sale's reward. The README shows the answer each of the
   three takes, and the 409 `app_request_dropped` Siren answers once it stopped
-  waiting, 24 hours after the first ask about a sale.
+  waiting, 24 hours after the sale's reward began to wait.
 - `apps.verify_request(raw_body, headers, secret, *, tolerance_seconds, now)`
   checks a request Siren signed and sent an app and returns an `AppRequest`.
   It checks `X-Siren-Event`, the `X-Siren-Signature-V2` signature over

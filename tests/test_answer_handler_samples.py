@@ -65,6 +65,21 @@ def split_the_reward(request):
     return {"outcome": "rewards", "units": pool["units"], "rewards": rewards}
 '''
 
+SAMPLE_AWARD = '''@answers.on("incentiveType", "pay-on-closed-deals")
+def pay_on_closed_deals(request):
+    sale, ids = request.data["transaction"], [e["engagementId"] for e in request.data["engagements"]]
+    if not sale or sale["units"] != request.data["program"]["units"]:
+        return {"outcome": "none"}  # A lead earns nothing here.
+    return {"outcome": "award", "units": sale["units"], "pool": sale["total"] // 10, "engagementIds": ids}
+'''
+
+SAMPLE_GROUP_ORDER = '''@answers.on("programGroupSorter", "pick-the-program")
+def pick_the_program(request):
+    # Try the program whose best engagement scores highest first.
+    best = {p["id"]: max([0] + [e["score"] for e in p["engagements"]]) for p in request.data["programs"]}
+    return {"outcome": "sorted", "programIds": sorted(best, key=best.get, reverse=True)}
+'''
+
 FUNCTION_5_1 = SAMPLE_5_1[SAMPLE_5_1.index('@answers.on("postConversionAction"') : SAMPLE_5_1.index("app = Flask")]
 
 SAMPLES = {
@@ -72,6 +87,8 @@ SAMPLES = {
     "postAllocationAction": SAMPLE_5_1.replace(FUNCTION_5_1, SAMPLE_5_2 + "\n"),
     "distributionResolver": SAMPLE_5_1.replace(FUNCTION_5_1, SAMPLE_5_3 + "\n"),
     "incentiveResolver": SAMPLE_5_1.replace(FUNCTION_5_1, SAMPLE_5_4 + "\n"),
+    "incentiveType": SAMPLE_5_1.replace(FUNCTION_5_1, SAMPLE_AWARD + "\n"),
+    "programGroupSorter": SAMPLE_5_1.replace(FUNCTION_5_1, SAMPLE_GROUP_ORDER + "\n"),
 }
 
 
@@ -163,6 +180,8 @@ def test_each_sample_is_ten_to_sixteen_lines():
         assert 10 <= len(sample.splitlines()) <= 16, kind
 
 
-@pytest.mark.parametrize("sample", [SAMPLE_5_1, SAMPLE_5_2, SAMPLE_5_3, SAMPLE_5_4], ids=["5.1", "5.2", "5.3", "5.4"])
+@pytest.mark.parametrize(
+    "sample", [SAMPLE_5_1, SAMPLE_5_2, SAMPLE_5_3, SAMPLE_5_4, SAMPLE_AWARD, SAMPLE_GROUP_ORDER], ids=["5.1", "5.2", "5.3", "5.4", "award", "group order"]
+)
 def test_the_readme_carries_each_sample_word_for_word(sample):
     assert sample in (ROOT / "README.md").read_text()
