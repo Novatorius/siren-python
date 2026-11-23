@@ -638,8 +638,9 @@ A collaborator group structure (`AppItemKind.COLLABORATOR_GROUP_STRUCTURE`)
 gives a collaborator group's shape. Siren asks it once per cascade trigger on
 a group that picks it, for a program (an engagement cascade) or a distributor
 (a metric cascade). Its question, `siren.AppCollaboratorGroupStructureQuestion`,
-names the `group`, its `members` with each one's `collaboratorId`, `name` and
-`metadata`, what the cascade is `for`, the `triggeringCollaborator` and the
+names the `group`, its `members` with each one's `collaboratorId`, `name`,
+`status` at the trigger, which Siren credits the member by, and `metadata`,
+what the cascade is `for`, the `triggeringCollaborator` and the
 `cause`, whose `id` is the trigger's own random id of 16 hex characters. It
 also carries the keys of the trigger it interrupts, so a distributor's ask
 carries a metric calculation's keys, typed as
@@ -650,9 +651,9 @@ engagement calculation's keys (`program`, `engagementType`, `programEngagementTy
 
 ```json
 {"group": {"id": 4, "name": "Northeast team"},
- "members": [{"collaboratorId": 42, "name": "Riley Rep", "metadata": {"rank": 3}},
-             {"collaboratorId": 57, "name": "Sam Lead", "metadata": {"rank": 2}},
-             {"collaboratorId": 63, "name": "Jo Manager", "metadata": {"rank": 1}}],
+ "members": [{"collaboratorId": 42, "name": "Riley Rep", "status": "active", "metadata": {"rank": 3}},
+             {"collaboratorId": 57, "name": "Sam Lead", "status": "active", "metadata": {"rank": 2}},
+             {"collaboratorId": 63, "name": "Jo Manager", "status": "active", "metadata": {"rank": 1}}],
  "for": {"type": "distributor", "id": 2},
  "triggeringCollaborator": {"id": 42, "name": "Riley Rep"},
  "cause": {"id": "9f2c4e1a7b3d5c60", "type": null, "causeId": null},

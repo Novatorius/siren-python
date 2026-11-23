@@ -12,13 +12,14 @@ import hmac
 import json
 import time
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, get_type_hints
 
 import pytest
 
 import siren
 from siren import (
     AppCollaboratorGroupChain,
+    AppCollaboratorGroupMember,
     AppCollaboratorGroupStructureAnswer,
     AppCollaboratorGroupStructureDistributorQuestion,
     AppCollaboratorGroupStructureProgramQuestion,
@@ -37,9 +38,9 @@ REQUEST_ID = "apr_b79943ff8ca353ce5cf5312bb3fa66c7"
 QUESTION: AppCollaboratorGroupStructureDistributorQuestion = {
     "group": {"id": 4, "name": "Northeast team"},
     "members": [
-        {"collaboratorId": 42, "name": "Riley Rep", "metadata": {"rank": 3}},
-        {"collaboratorId": 57, "name": "Sam Lead", "metadata": {"rank": 2}},
-        {"collaboratorId": 63, "name": "Jo Manager", "metadata": {"rank": 1}},
+        {"collaboratorId": 42, "name": "Riley Rep", "status": "active", "metadata": {"rank": 3}},
+        {"collaboratorId": 57, "name": "Sam Lead", "status": "active", "metadata": {"rank": 2}},
+        {"collaboratorId": 63, "name": "Jo Manager", "status": "active", "metadata": {"rank": 1}},
     ],
     "for": {"type": "distributor", "id": 2},
     "triggeringCollaborator": {"id": 42, "name": "Riley Rep"},
@@ -95,6 +96,10 @@ def test_the_kind_is_named_with_the_value_siren_stores():
     assert siren.AppCollaboratorGroupStructureAnswer is AppCollaboratorGroupStructureAnswer
     assert siren.AppCollaboratorGroupStructureProgramQuestion is AppCollaboratorGroupStructureProgramQuestion
     assert "AppCollaboratorGroupStructureProgramQuestion" in siren.__all__
+
+
+def test_each_member_carries_its_status_at_the_trigger():
+    assert get_type_hints(AppCollaboratorGroupMember)["status"] is str
 
 
 def test_the_program_question_holds_the_group_keys_and_the_engagement_calculation_keys():

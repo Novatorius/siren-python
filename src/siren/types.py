@@ -643,10 +643,13 @@ class AppTransactionFilterAnswer(TypedDict):
 
 
 class AppCollaboratorGroupMember(TypedDict):
-    """One member of a collaborator group in a group structure question."""
+    """One member of a collaborator group in a group structure question.
+    ``status`` is the collaborator's status at the trigger, such as
+    ``active`` or ``inactive``, which Siren credits the member by."""
 
     collaboratorId: int
     name: str
+    status: str
     metadata: Dict[str, Any]
 
 
