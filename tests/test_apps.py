@@ -166,7 +166,8 @@ def test_a_signed_body_that_is_not_a_request_is_refused(client, signed, envelope
     _, headers, secret, t = signed
     body = json.dumps(envelope)
 
-    with pytest.raises(siren.SignatureVerificationError, match="not an app request of version 1"):
+    # The words name the field that fails, as tests/test_envelope_messages.py pins for each rule.
+    with pytest.raises(siren.SignatureVerificationError, match=r"^(The request's|An ask's) `[a-zA-Z.]+` must "):
         client.apps.verify_request(body, resign(body, headers, secret, t), secret, now=t)
 
 

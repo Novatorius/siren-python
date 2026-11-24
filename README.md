@@ -1,6 +1,6 @@
 # Siren SDK for Python
 
-Affiliate, referral, and incentive tracking for any commerce stack — record sales, verify signed webhooks in one call, and reconcile Siren's ledger against your own.
+Answer Siren Cloud from your own app with one request handler, and record sales, verify signed webhooks and reconcile Siren's ledger against your own.
 
 [![PyPI version](https://img.shields.io/pypi/v/siren-sdk.svg)](https://pypi.org/project/siren-sdk/)
 [![CI](https://github.com/Novatorius/siren-python/actions/workflows/ci.yml/badge.svg)](https://github.com/Novatorius/siren-python/actions/workflows/ci.yml)
@@ -9,11 +9,13 @@ Affiliate, referral, and incentive tracking for any commerce stack — record sa
 
 ## What you can do
 
-- Record sales, refunds and referred visits (`events`).
 - Answer Siren Cloud from your own app with one request handler
   (`apps.request_handler()`), mounted on Flask, Django, FastAPI, Starlette,
   any WSGI server or a plain call. Register a function for each feature and
   the handler checks the signature, replies and posts the answer.
+- Try the handler without Siren: `siren.testing` signs a request for any
+  kind with Siren's own sample question, and `simulate()` runs it and hands
+  back the answer.
 - Build every kind of app feature, each with typed questions and answers:
   post-conversion and post-allocation actions, distribution resolvers,
   attribution models, incentive structures, metric calculations, customer
@@ -26,6 +28,7 @@ Affiliate, referral, and incentive tracking for any commerce stack — record sa
   `events.browser_token_handler()`).
 - Check a request and answer it by hand when a person or a queue decides
   (`apps.verify_request()`, `apps.requests.answer()`).
+- Record sales, refunds and referred visits (`events`).
 - Verify signed webhook deliveries in one constant-time call (`webhooks`).
 - Read Siren's ledger and manage webhook subscriptions with an API key that
   holds the ledger and webhook scopes.
@@ -35,148 +38,29 @@ Affiliate, referral, and incentive tracking for any commerce stack — record sa
 The full developer surface is described in the
 [OpenAPI specification](./openapi.yaml).
 
-## What is Siren?
-
-[Siren](https://sirenaffiliates.com) is an affiliate, referral, and incentive
-platform. You register commerce events — sales, refunds, referred visits — and
-Siren attributes them to collaborators, computes rewards, and pays out.
-This SDK is the official Python client for the Siren API.
-
 ## Install
 
 ```bash
 pip install siren-sdk
 ```
 
-The distribution is named **`siren-sdk`**, but the import name is **`siren`**:
+The distribution is named **`siren-sdk`**, and the import name is **`siren`**.
+It needs Python 3.9 or later, and its only dependency is
+[`httpx`](https://www.python-httpx.org/).
 
-```python
-import siren
+**The apps code is unreleased.** The request handler, the feature kinds and
+`siren.testing` live on the `feat/apps` branch until its pull request merges
+and a release ships. The published `siren-sdk` 0.2.0 doesn't have them. Until
+then, install the branch:
+
+```bash
+pip install "git+https://github.com/Novatorius/siren-python@feat/apps"
 ```
 
-Requires Python 3.9+. The only dependency is [`httpx`](https://www.python-httpx.org/).
+Or install a local checkout of it:
 
-## Quickstart
-
-### Record a sale
-
-```python
-import siren
-
-client = siren.Siren(api_key="sk_live_...")  # Settings -> API Keys in the Siren dashboard
-
-result = client.events.sale(
-    source="stripe",                 # your commerce source
-    external_id="cs_test_a1b2c3",    # your order id; used to match refunds later
-    total=49.99,                     # major units: 49.99 means $49.99
-    tracking_id=4021,                # opportunity id from the Siren tracking cookie
-)
-
-print(result.opportunity_id)  # read from the X-Siren-OID response header
-print(result.status)          # created, recorded, duplicate, unattributed, ignored, or queued
-```
-
-Siren answers each sale with what came of it, in `result.body`. Sending the
-same `source` and `external_id` again records nothing new and answers
-`duplicate`. While your organization's processing is paused, Siren queues the
-event and answers `202`, and `result.queued` is `True`.
-
-With line items (reward pools compute `amount x quantity` per line; a missing
-`quantity` defaults to `1`):
-
-```python
-client.events.sale(
-    source="stripe",
-    external_id="ord_77",
-    total=109.97,
-    tracking_id=4021,
-    currency="USD",
-    items=[
-        {"external_id": "sku_1", "name": "Pro Plan (annual)", "amount": 49.99},
-        {"name": "Add-on", "quantity": 3, "amount": 19.99},
-    ],
-)
-```
-
-Refunds and referred visits:
-
-```python
-client.events.refund(source="stripe", external_id="cs_test_a1b2c3")
-client.events.site_visited(collaborator_id=88, user_id=12345)
-```
-
-### Verify a webhook
-
-Siren signs every delivery with `X-Siren-Signature: sha256=<hex hmac>` — an
-HMAC-SHA256 of the **raw request body** keyed by your subscription's signing
-secret. `construct_event` verifies the signature (constant-time) and parses
-the event in one call.
-
-The body is the event's payload alone, such as `{"conversionId": 991}`. The
-event type arrives in the `X-Siren-Event` header and the event id in
-`X-Siren-Delivery`, so pass both headers along. Without `event_type`,
-`construct_event` raises `SignatureVerificationError`, because the body alone
-does not name the event. The event id stays the same when Siren retries a
-delivery, so use it to drop repeats.
-
-```python
-import siren
-from flask import Flask, request
-
-app = Flask(__name__)
-client = siren.Siren(api_key="sk_live_...")
-
-
-@app.post("/webhooks/siren")
-def handle_webhook():
-    try:
-        event = client.webhooks.construct_event(
-            request.get_data(),                        # RAW body bytes — critical
-            request.headers.get("X-Siren-Signature"),
-            "whsec_...",                               # your signing secret
-            event_type=request.headers.get("X-Siren-Event"),
-            delivery_id=request.headers.get("X-Siren-Delivery"),
-        )
-    except siren.SignatureVerificationError:
-        return "invalid signature", 400
-
-    if event.type == siren.WebhookEventType.CONVERSION_APPROVED:
-        handle_conversion(event.data)
-
-    return "", 204
-```
-
-> **Pass the raw body bytes.** The HMAC is computed over the exact bytes Siren
-> sent. If you parse the JSON and re-serialize it, key order and whitespace
-> change and verification will fail. Use `request.get_data()` (Flask),
-> `request.body` (Django), `await request.body()` (FastAPI/Starlette) — never
-> `json.dumps(request.json)`.
-
-To just check a signature without parsing:
-
-```python
-if client.webhooks.verify_signature(raw_body, signature_header, secret):
-    ...
-```
-
-#### Manage subscriptions
-
-The API key needs the `webhook-subscriptions:manage` scope. A key with
-`webhook-subscriptions:read` can call `list()` only.
-
-```python
-subscription = client.webhooks.subscriptions.create(
-    target_url="https://example.com/webhooks/siren",
-    events=[
-        siren.WebhookEventType.CONVERSION_APPROVED,
-        siren.WebhookEventType.PAYOUT_PAID,
-    ],
-    # or events=[siren.WebhookEventType.ALL] to subscribe to everything
-)
-print(subscription.signing_secret)  # returned ONCE — store it now
-
-client.webhooks.subscriptions.list()
-client.webhooks.subscriptions.delete(subscription.id)
+```bash
+pip install /path/to/siren-python
 ```
 
 ## Answer Siren in a few lines
@@ -184,20 +68,16 @@ client.webhooks.subscriptions.delete(subscription.id)
 A Siren app is a service you host that acts as part of Siren Cloud's engine.
 Each of its features joins one of Siren's pickers, and Siren sends the app a
 signed request at its address whenever an organization's records use the
-feature. Make a request handler with the app's signing secret, register a
-function for each feature by its kind and key, and mount the handler at the
-address. Make the client with the app's own key, since the handler posts an
-ask's answer with it. The key and the signing secret are the two secrets
-Siren showed once when it made the app.
+feature. Make a request handler, register a function for each feature by its
+kind and key, and mount the handler at the address.
 
 <!-- readme-test: handler-flask -->
 ```python
-import os
 import siren
 from flask import Flask
 
-client = siren.Siren(api_key=os.environ["SIREN_API_KEY"], base_url="https://cloud.example.com/siren/v1")
-answers = client.apps.request_handler(os.environ["SIREN_SIGNING_SECRET"])
+client = siren.Siren()                   # reads SIREN_API_KEY, the app's own key
+answers = client.apps.request_handler()  # reads SIREN_SIGNING_SECRET
 
 @answers.on("postConversionAction", "tell-the-crm")
 def tell_the_crm(request):
@@ -208,13 +88,60 @@ app = Flask(__name__)
 app.add_url_rule("/siren", view_func=answers.flask, methods=["POST"])
 ```
 
-That is a whole app for Flask. `base_url` is your Siren Cloud's API address.
+That is a whole app for Flask. Set `SIREN_API_KEY` to the app's key and
+`SIREN_SIGNING_SECRET` to its signing secret, the two secrets Siren showed
+once when it made the app, or pass them as `siren.Siren(api_key=...)` and
+`request_handler(signing_secret)`. The handler posts an ask's answer with the
+app's key.
+
+The client talks to Siren Cloud. Pass `base_url` only for a local or sandbox
+Siren. An ask names the address Siren wants its answer at, and the handler
+refuses an ask from any other Siren than the client's with a 500, and tells
+`on_error` both addresses and the `base_url` to set. The answer only ever goes
+to the client's own address, never to one a request names.
+
 Each kind of feature changes only the function, as
 [Feature kinds](#feature-kinds) shows. The function gets an
 `siren.AppRequest`: `request.id` is the request key, the same on every send,
 `request.data` is the question, `request.item` holds the feature's `kind` and
 `key`, and `request.answer_by` is when Siren wants an ask's answer. A tell's
 function returns nothing. An ask's function returns the answer.
+
+### Try it without Siren
+
+`siren.testing` signs a request the way Siren does, for any kind, with that
+kind's sample question from Siren's own fixtures. The handler's `simulate()`
+runs it through every check and the function, and hands back the reply's
+`status` and `body` and, for an ask, the `answer` it would post. It posts
+nothing. When the function raises, or returns an answer the handler would not
+post, `simulate()` raises that error, so a test shows the traceback.
+
+In a pytest file beside the app, with `SIREN_SIGNING_SECRET` set as for the
+app, and the distribution resolver from
+[Feature kinds](#distribution-resolver-distributionresolver) registered:
+
+<!-- readme-test: try-it -->
+```python
+from siren.testing import app_request, sample_data
+
+from my_app import answers  # the module that holds the handler
+
+
+def test_tells_the_crm():
+    assert answers.simulate(app_request("postConversionAction", "tell-the-crm")).status == 200
+
+
+def test_splits_by_score():
+    question = sample_data("distributionResolver")  # change it to try an edge case
+    result = answers.simulate(app_request("distributionResolver", "split-by-score", data=question))
+    assert result.answer["shares"] == {"41": 6000, "43": 4000}
+```
+
+`app_request()` takes `data`, `secret`, `id`, `app`, `base_url` and
+`timestamp` too, and returns the `method`, `headers` and `raw_body`, so the
+same request can go to a running app with any HTTP client. That app then
+posts its answer to Siren, which refuses a request id it never sent, so
+`simulate()` is the way to see an answer before Siren sends real requests.
 
 ### Mount it on your framework
 
@@ -286,8 +213,9 @@ function gets a `siren.WebhookEvent`.
 
 ### Options
 
-`request_handler(signing_secret, *, tolerance_seconds, run_later, on_error)`
-takes three options:
+`request_handler(signing_secret=None, *, tolerance_seconds, run_later, on_error)`
+reads `SIREN_SIGNING_SECRET` when no secret is passed, and takes three
+options:
 
 - `tolerance_seconds` is how far the signed time may be from the clock, 300
   by default and at most 3600.
@@ -307,7 +235,7 @@ workers = ThreadPoolExecutor(max_workers=4)
 def report(error, request):
     logging.getLogger("my-app").warning("Siren request %s failed: %s", getattr(request, "id", None), error)
 
-answers = client.apps.request_handler(os.environ["SIREN_SIGNING_SECRET"], run_later=workers.submit, on_error=report)
+answers = client.apps.request_handler(run_later=workers.submit, on_error=report)
 ```
 
 ### Split a pool
@@ -340,7 +268,8 @@ replies:
 | A body over 1 MiB, more than Siren sends | 413, read no further |
 | A body a parser already read, so the signed bytes are gone | 500, and `on_error` gets a `SirenError` that says to mount the handler before the JSON parser |
 | A signature that is missing or wrong, or a time outside `tolerance_seconds` | 401 |
-| A signed body that is not JSON, or not an app request of version 1 | 400 |
+| A signed body that is not JSON, or not an app request of version 1 | 400, naming the first field that fails, such as "The request's `id` must be `apr_` followed by 32 lowercase hex characters." |
+| An ask whose `answerUrl` is on another Siren than the client's `base_url` | 500, and `on_error` gets a `SirenError` naming both addresses and the `base_url` to set |
 | A tell with a function | 200 once the function returns, 500 when it raises, so Siren sends it again |
 | An ask with a function | 200 at once. The function runs after the reply, and the handler posts what it returns |
 | A kind and key with no function | 404 `No function handles <kind> <key>.`, so Siren shows the request under Needs attention once its sends run out |
@@ -1069,7 +998,8 @@ that `X-Siren-Event` is `app.request` when present, that
 body, that `X-Siren-Timestamp` matches `t`, that `t` is within
 `tolerance_seconds` of the clock (300 by default, at most 3600), and that the
 body is an app request of version 1. Each failure raises
-`SignatureVerificationError` with the reason. Pass the body exactly as
+`SignatureVerificationError` with the reason, and a body that isn't a request
+names the first field that fails. Pass the body exactly as
 received. Siren may send one request more than once, so drop a repeat by
 `request.id`. The request's `answer_by` and `answer_url` say when and where
 Siren wants an ask's answer.
@@ -1131,6 +1061,141 @@ The errors the SDK raises all subclass `siren.SirenError`, with `message`,
 
 From `apps.requests.answer()` these raise. From the handler they go to
 `on_error`. The [Errors](#errors) table lists every other status.
+
+## Record sales and verify webhooks
+
+### Record a sale
+
+```python
+import siren
+
+client = siren.Siren(api_key="sk_live_...")  # or set SIREN_API_KEY
+
+result = client.events.sale(
+    source="stripe",                 # your commerce source
+    external_id="cs_test_a1b2c3",    # your order id; used to match refunds later
+    total=49.99,                     # major units: 49.99 means $49.99
+    tracking_id=4021,                # opportunity id from the Siren tracking cookie
+)
+
+print(result.opportunity_id)  # read from the X-Siren-OID response header
+print(result.status)          # created, recorded, duplicate, unattributed, ignored, or queued
+```
+
+Siren answers each sale with what came of it, in `result.body`. Sending the
+same `source` and `external_id` again records nothing new and answers
+`duplicate`. While your organization's processing is paused, Siren queues the
+event and answers `202`, and `result.queued` is `True`.
+
+With line items (reward pools compute `amount x quantity` per line; a missing
+`quantity` defaults to `1`):
+
+```python
+client.events.sale(
+    source="stripe",
+    external_id="ord_77",
+    total=109.97,
+    tracking_id=4021,
+    currency="USD",
+    items=[
+        {"external_id": "sku_1", "name": "Pro Plan (annual)", "amount": 49.99},
+        {"name": "Add-on", "quantity": 3, "amount": 19.99},
+    ],
+)
+```
+
+Refunds and referred visits:
+
+```python
+client.events.refund(source="stripe", external_id="cs_test_a1b2c3")
+client.events.site_visited(collaborator_id=88, user_id=12345)
+```
+
+### Verify a webhook
+
+This section is for a webhook subscription's own address. An app's address
+gets the newer `X-Siren-Signature-V2` header, which signs the time too, and the
+request handler checks it for you, for app requests and for webhook events
+sent there through `on_event`.
+
+Siren signs every delivery with `X-Siren-Signature: sha256=<hex hmac>`, an
+HMAC-SHA256 of the **raw request body** keyed by your subscription's signing
+secret. `construct_event` verifies the signature (constant-time) and parses
+the event in one call.
+
+The body is the event's payload alone, such as `{"conversionId": 991}`. The
+event type arrives in the `X-Siren-Event` header and the event id in
+`X-Siren-Delivery`, so pass both headers along. Without `event_type`,
+`construct_event` raises `SignatureVerificationError`, because the body alone
+does not name the event. The event id stays the same when Siren retries a
+delivery, so use it to drop repeats.
+
+```python
+import siren
+from flask import Flask, request
+
+app = Flask(__name__)
+client = siren.Siren(api_key="sk_live_...")
+
+
+@app.post("/webhooks/siren")
+def handle_webhook():
+    try:
+        event = client.webhooks.construct_event(
+            request.get_data(),                        # RAW body bytes — critical
+            request.headers.get("X-Siren-Signature"),
+            "whsec_...",                               # your signing secret
+            event_type=request.headers.get("X-Siren-Event"),
+            delivery_id=request.headers.get("X-Siren-Delivery"),
+        )
+    except siren.SignatureVerificationError:
+        return "invalid signature", 400
+
+    if event.type == siren.WebhookEventType.CONVERSION_APPROVED:
+        handle_conversion(event.data)
+
+    return "", 204
+```
+
+> **Pass the raw body bytes.** The HMAC is computed over the exact bytes Siren
+> sent. If you parse the JSON and re-serialize it, key order and whitespace
+> change and verification will fail. Use `request.get_data()` (Flask),
+> `request.body` (Django), `await request.body()` (FastAPI/Starlette) — never
+> `json.dumps(request.json)`.
+
+To just check a signature without parsing:
+
+```python
+if client.webhooks.verify_signature(raw_body, signature_header, secret):
+    ...
+```
+
+#### Manage subscriptions
+
+The API key needs the `webhook-subscriptions:manage` scope. A key with
+`webhook-subscriptions:read` can call `list()` only.
+
+```python
+subscription = client.webhooks.subscriptions.create(
+    target_url="https://example.com/webhooks/siren",
+    events=[
+        siren.WebhookEventType.CONVERSION_APPROVED,
+        siren.WebhookEventType.PAYOUT_PAID,
+    ],
+    # or events=[siren.WebhookEventType.ALL] to subscribe to everything
+)
+print(subscription.signing_secret)  # returned ONCE — store it now
+
+client.webhooks.subscriptions.list()
+client.webhooks.subscriptions.delete(subscription.id)
+```
+
+## What is Siren?
+
+[Siren](https://sirenaffiliates.com) is an affiliate, referral, and incentive
+platform. You register commerce events — sales, refunds, referred visits — and
+Siren attributes them to collaborators, computes rewards, and pays out.
+This SDK is the official Python client for the Siren API.
 
 ## Features
 
@@ -1258,12 +1323,14 @@ except siren.RateLimitError as err:
 
 ```python
 client = siren.Siren(
-    api_key="sk_live_...",
-    base_url="https://api.sirenaffiliates.com/siren/v1",  # default; point at staging/local to test
+    api_key="sk_live_...",  # SIREN_API_KEY when left out
+    base_url="https://api.sirenaffiliates.com/siren/v1",  # the default, Siren Cloud
     timeout=30.0,       # seconds
     max_retries=2,      # exponential backoff on network errors and 429/5xx
 )
 ```
+
+Set `base_url` only for a local or sandbox Siren.
 
 ## Other SDKs
 

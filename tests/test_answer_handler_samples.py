@@ -8,7 +8,8 @@ kind's function in place of the first sample's, runs the app on 127.0.0.1,
 and plays Siren: it signs Siren's own request for the kind
 (tests/fixtures/apps-feature-contracts/requests.json, a copy of Siren's
 tests/Fixtures file, which Siren's builders and feature page are held to)
-with a test secret and delivers it over HTTP. A tell gets its 200 once the
+with a test secret through ``siren.testing.app_request()`` and delivers it
+over HTTP. A tell gets its 200 once the
 function returns. An ask gets its 200 before anything is posted, then the
 fake Siren takes the posted answer, which must equal the README's answer and
 keep the kind's rules. The README's question must equal the fixture's.
@@ -19,12 +20,9 @@ environment variables."""
 
 from __future__ import annotations
 
-import hashlib
-import hmac
 import json
 import re
 import threading
-import time
 import urllib.request
 from pathlib import Path
 from typing import Any, Dict, List
@@ -34,6 +32,8 @@ import httpx
 import pytest
 
 import siren
+from siren import testing
+from siren._client import DEFAULT_BASE_URL
 
 ROOT = Path(__file__).resolve().parent.parent
 README = (ROOT / "README.md").read_text()
@@ -104,22 +104,19 @@ class Quiet(WSGIRequestHandler):
 
 
 def signed_delivery(kind: str):
-    """What Siren sends for the kind, signed now with the test secret, as
-    WebhookSignature::headers() signs it."""
-    body = json.dumps(CONTRACTS["kinds"][kind]["request"]).encode()
-    t = int(time.time())
-    v1 = hmac.new(SECRET.encode(), f"{t}.".encode() + body, hashlib.sha256).hexdigest()
-    headers = {
-        "Content-Type": "application/json",
-        "X-Siren-Signature": "sha256=" + hmac.new(SECRET.encode(), body, hashlib.sha256).hexdigest(),
-        "X-Siren-Event": "app.request",
-        "X-Siren-Delivery": CONTRACTS["requestKey"] + ".1",
-        "User-Agent": "Siren-Webhooks/1.0",
-        "X-Siren-Timestamp": str(t),
-        "X-Siren-Signature-V2": f"t={t},v1={v1}",
-        "Idempotency-Key": CONTRACTS["requestKey"],
-    }
-    return body, headers
+    """Siren's own request for the kind, signed now with the test secret by
+    ``siren.testing.app_request()``, the helper the README's "Try it without
+    Siren" teaches, so the helper and the samples can't drift."""
+    request = CONTRACTS["kinds"][kind]["request"]
+    signed = testing.app_request(
+        kind,
+        request["item"]["key"],
+        data=request["data"],
+        secret=SECRET,
+        id=CONTRACTS["requestKey"],
+        app=CONTRACTS["app"],
+    )
+    return signed.raw_body, signed.headers
 
 
 def keeps_the_rules(kind: str, question: Dict[str, Any], answer: Dict[str, Any]) -> None:
@@ -218,7 +215,8 @@ def test_each_sample_answers_siren_as_its_kind_needs(kind, monkeypatch):
 
         return stand_in
 
-    with respx.mock(base_url=CONTRACTS["apiBase"], assert_all_called=False) as siren_api:
+    # The first sample sets no base_url, so its answers go to Siren Cloud's address.
+    with respx.mock(base_url=DEFAULT_BASE_URL, assert_all_called=False) as siren_api:
         siren_api.post(f"/apps/requests/{CONTRACTS['requestKey']}/answer").mock(side_effect=answer_route)
         scope: Dict[str, Any] = {
             "__name__": "sample",

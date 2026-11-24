@@ -19,7 +19,11 @@ The replies, in the order the checks run:
   differs from the signed time, or the time is more than ``tolerance_seconds``
   from the clock.
 - 400 when the signed body is not JSON, or an ``app.request`` body is not a
-  version 1 request.
+  version 1 request. The words name the first field that fails.
+- 500 for an ask whose signed ``answerUrl`` is on another Siren than the
+  client's ``base_url``. ``on_error`` gets a :class:`~siren.SirenError` that
+  names both addresses, and Siren sends the request again. The answer only
+  ever goes to the client's own address, never to one a request names.
 - A tell: 200 once its function returns, or 500 when it raises, so Siren
   sends it again.
 - An ask: 200 at once. The function runs after the reply, and what it
@@ -45,6 +49,7 @@ import threading
 import time
 from dataclasses import dataclass, field
 from http import HTTPStatus
+from urllib.parse import urlsplit
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -63,7 +68,7 @@ from typing import (
     overload,
 )
 
-from .apps import REQUEST_EVENT, Apps, _BodyRefused, _check_signature, _check_tolerance, _header
+from .apps import REQUEST_EVENT, Apps, _BodyRefused, _check_signature, _check_tolerance, _checked_answer, _header
 from .errors import SignatureVerificationError, SirenError
 from .types import AppRequest, WebhookEvent
 from .webhooks import _is_envelope as _is_webhook_envelope
@@ -71,7 +76,7 @@ from .webhooks import _is_envelope as _is_webhook_envelope
 if TYPE_CHECKING:  # pragma: no cover
     from .apps import AppRequests
 
-__all__ = ["AppRequestHandler", "AppRequestReply", "MAX_BODY_BYTES"]
+__all__ = ["AppRequestHandler", "AppRequestReply", "AppSimulation", "MAX_BODY_BYTES"]
 
 #: The longest body the handler reads, 1 MiB, as in the Node SDK. Siren's
 #: requests are far smaller, since an answer alone stays under 16 KB.
@@ -120,6 +125,47 @@ class AppRequestReply:
 
 def _reply(status: int, error: Optional[str] = None, *, after: Optional[Work] = None, headers: Tuple[Tuple[str, str], ...] = _JSON_HEADERS) -> AppRequestReply:
     return AppRequestReply(status, {} if error is None else {"error": error}, after, headers)
+
+
+@dataclass(frozen=True)
+class AppSimulation:
+    """What :meth:`AppRequestHandler.simulate` saw: the ``status`` and JSON
+    ``body`` the handler would reply, and for an ask, the ``answer`` it would
+    post, checked as the post checks it, or ``None``."""
+
+    status: int
+    body: Dict[str, Any]
+    answer: Optional[Dict[str, Any]] = None
+
+
+#: Siren Cloud's two public hosts, which reach the same service, so an
+#: answer address on either one is the same Siren. Siren's own repository
+#: shows they are one deployment: .github/workflows/deploy-cloud.yml checks
+#: health at https://app.sirenaffiliates.com/health,
+#: .github/workflows/publish-product-screenshots.yml sets
+#: APP_URL=https://app.sirenaffiliates.com, and docs/origin-lock-runbook.md
+#: has Cloudflare proxy both hosts to the same origin, where nginx answers
+#: with ``server_name _``. Only this pair, over https on 443, counts as one.
+#: Any other difference in scheme, host or port is another Siren.
+_CLOUD_HOSTS = frozenset({"api.sirenaffiliates.com", "app.sirenaffiliates.com"})
+
+
+def _origin(url: str) -> Optional[Tuple[str, str, int]]:
+    """A URL's scheme, host and port, with Siren Cloud's two hosts as one,
+    or ``None`` for an address that can't be read."""
+    try:
+        parts = urlsplit(url)
+        port = parts.port
+    except ValueError:
+        return None
+    scheme = parts.scheme.lower()
+    host = (parts.hostname or "").lower()
+    if scheme not in ("http", "https") or host == "":
+        return None
+    port = port if port is not None else (443 if scheme == "https" else 80)
+    if scheme == "https" and port == 443 and host in _CLOUD_HOSTS:
+        host = "siren-cloud"
+    return scheme, host, port
 
 
 @dataclass
@@ -272,6 +318,29 @@ class AppRequestHandler:
             return AppRequestReply(reply.status, reply.body, None, reply.headers)
         return reply
 
+    def simulate(self, request: Any) -> AppSimulation:
+        """Run a request through the handler, for a test, without posting an
+        answer. ``request`` is what :func:`siren.testing.app_request` builds,
+        or anything with ``method``, ``headers`` and ``raw_body``.
+
+        Every check runs as for a real request, and the result holds the
+        reply's ``status`` and ``body``. For an ask, ``answer`` holds what
+        the function returned, checked as the post checks it. A refused
+        request, including an ask from another Siren, shows as its status.
+        When the function raises, ``simulate`` raises the same error, and an
+        answer the handler would not post raises :class:`ValueError`. An
+        ``async def`` function is run to the end.
+        """
+        checked = self._check(getattr(request, "method", "POST"), request.raw_body, request.headers)
+        if isinstance(checked, AppRequestReply):
+            return AppSimulation(checked.status, checked.body)
+        returned = _call(checked.fn, checked.subject)
+        if checked.mode != "ask" or returned is None:
+            return AppSimulation(200, {})
+        assert isinstance(checked.subject, AppRequest)
+        answer = _checked_answer(f"The function for {checked.label}", checked.subject.id, returned)
+        return AppSimulation(200, {}, answer)
+
     # The core --------------------------------------------------------------
 
     def _handle(self, method: Any, raw_body: Any, headers: Any) -> AppRequestReply:
@@ -312,6 +381,11 @@ class AppRequestHandler:
                 return _reply(400, error.message)
             except SignatureVerificationError as error:
                 return _reply(401, error.message)
+            if request.mode == "ask":
+                wrong_siren = self._wrong_siren(request.answer_url or "")
+                if wrong_siren is not None:
+                    self._report(SirenError(wrong_siren), request)
+                    return _reply(500, wrong_siren)
             kind, key = request.item["kind"], request.item["key"]
             fn = self._functions.get((kind, key)) or self._functions.get((kind, None))
             if fn is None:
@@ -343,6 +417,20 @@ class AppRequestHandler:
         else:
             subject = WebhookEvent(type=event, data=payload, delivery_id=delivery, raw=payload)
         return _Run("event", handles, subject, f"the {event} event", f"The function for the {event} event failed, so Siren will send it again.")
+
+    def _wrong_siren(self, answer_url: str) -> Optional[str]:
+        """Why an ask's answer can't go where the request expects it, or
+        ``None`` when the signed ``answerUrl`` is on the client's Siren."""
+        base = self._requests._client.base_url
+        signed = _origin(answer_url)
+        if signed is not None and signed == _origin(base):
+            return None
+        marker = answer_url.find("/apps/requests/")
+        sent_from = answer_url[:marker] if marker > 0 else answer_url
+        return (
+            f"Siren sent this request from {answer_url}, but this client sends answers to {base}. "
+            f"Set base_url to {sent_from}."
+        )
 
     def _answer(self, run: _Run) -> None:
         """An ask's work: run the function, then post what it returned."""

@@ -11,6 +11,7 @@ import hashlib
 import hmac
 import json
 import math
+import os
 import re
 import time
 from fractions import Fraction
@@ -91,32 +92,40 @@ def _is_object(value: Any) -> bool:
     return isinstance(value, dict)
 
 
-def _is_envelope(body: Any) -> bool:
-    """Whether the body is an app request of version 1, as Siren's
-    ``AppRequestEnvelope`` builds it."""
+def _envelope_problem(body: Any) -> Optional[str]:
+    """What is wrong with a body that should be an app request of version 1,
+    as Siren's ``AppRequestEnvelope`` builds it, naming the first field that
+    fails and its rule, or ``None`` when it is one."""
     if not _is_object(body):
-        return False
-    item = body.get("item")
-    mode = body.get("mode")
+        return "The signed body must be a JSON object."
     version = body.get("version")
-    return (
-        isinstance(version, int)
-        and not isinstance(version, bool)
-        and version == 1
-        and isinstance(body.get("id"), str)
-        and bool(_REQUEST_ID.match(body["id"]))
-        and body.get("type") == REQUEST_EVENT
-        and isinstance(body.get("app"), str)
-        and body["app"] != ""
-        and _is_object(item)
-        and isinstance(item.get("kind"), str)
-        and isinstance(item.get("key"), str)
-        and isinstance(item.get("id"), str)
-        and isinstance(body.get("createdAt"), str)
-        and _is_object(body.get("data"))
-        and mode in ("tell", "ask")
-        and (mode == "tell" or (isinstance(body.get("answerBy"), str) and isinstance(body.get("answerUrl"), str)))
-    )
+    if not isinstance(version, int) or isinstance(version, bool) or version != 1:
+        return "The request's `version` must be 1."
+    if not isinstance(body.get("id"), str) or not _REQUEST_ID.match(body["id"]):
+        return "The request's `id` must be `apr_` followed by 32 lowercase hex characters."
+    if body.get("type") != REQUEST_EVENT:
+        return f"The request's `type` must be `{REQUEST_EVENT}`."
+    mode = body.get("mode")
+    if mode not in ("tell", "ask"):
+        return "The request's `mode` must be `tell` or `ask`."
+    if not isinstance(body.get("app"), str) or body["app"] == "":
+        return "The request's `app` must be the app's key, as text."
+    item = body.get("item")
+    if not _is_object(item):
+        return "The request's `item` must be an object with `kind`, `key` and `id`."
+    for name in ("kind", "key", "id"):
+        if not isinstance(item.get(name), str):
+            return f"The request's `item.{name}` must be text."
+    if not isinstance(body.get("createdAt"), str):
+        return "The request's `createdAt` must be a date as text."
+    if not _is_object(body.get("data")):
+        return "The request's `data` must be a JSON object."
+    if mode == "ask":
+        if not isinstance(body.get("answerBy"), str):
+            return "An ask's `answerBy` must be a date as text."
+        if not isinstance(body.get("answerUrl"), str):
+            return "An ask's `answerUrl` must be the answer address as text."
+    return None
 
 
 class _BodyRefused(SignatureVerificationError):
@@ -270,7 +279,7 @@ class Apps:
 
     def request_handler(
         self,
-        signing_secret: str,
+        signing_secret: Optional[str] = None,
         *,
         tolerance_seconds: Optional[int] = None,
         run_later: Optional[Callable[[Callable[[], None]], Any]] = None,
@@ -283,17 +292,27 @@ class Apps:
         :class:`~siren.AppRequestHandler` for the replies and the faces to
         mount (``flask``, ``django``, ``asgi``, ``wsgi``).
 
+        ``signing_secret`` is the app's, which Siren showed once when it made
+        the app. It is read from ``SIREN_SIGNING_SECRET`` when not passed.
+
         ``run_later`` is handed an ask's work, a callable with no arguments,
         in place of running it after the reply, for a host that stops work
         once it has replied. ``on_error(error, request)`` gets every failure
         the reply can't show. It logs to the ``siren`` logger by default.
 
-        Raises :class:`ValueError` for an empty secret, a tolerance outside 1
+        Raises :class:`ValueError` for no secret, a tolerance outside 1
         to :data:`MAX_TOLERANCE_SECONDS`, and a ``run_later`` or ``on_error``
         that is not callable.
         """
         from .app_requests import AppRequestHandler
 
+        if signing_secret is None:
+            signing_secret = os.environ.get("SIREN_SIGNING_SECRET") or None
+        if signing_secret is None:
+            raise ValueError(
+                "apps.request_handler() needs the app's signing secret, which Siren showed once when it made the app. "
+                "Pass signing_secret, or set SIREN_SIGNING_SECRET."
+            )
         return AppRequestHandler(
             self.requests,
             signing_secret,
@@ -396,7 +415,8 @@ class Apps:
            under the secret, compared in constant time.
         6. ``t`` must be within the tolerance of ``now``, so an old request
            replayed later is refused.
-        7. The body must be an app request of version 1.
+        7. The body must be an app request of version 1. The error names the
+           first field that fails and its rule.
 
         ``raw_body`` MUST be the exact bytes received, such as Flask's
         ``request.get_data()``. Headers are matched without regard to case,
@@ -434,8 +454,9 @@ class Apps:
             body = json.loads(body_bytes.decode("utf-8"))
         except (UnicodeDecodeError, ValueError) as error:
             raise _BodyRefused("The signed body is not JSON.") from error
-        if not _is_envelope(body):
-            raise _BodyRefused("The signed body is not an app request of version 1.")
+        problem = _envelope_problem(body)
+        if problem is not None:
+            raise _BodyRefused(problem)
 
         return AppRequest(
             version=1,

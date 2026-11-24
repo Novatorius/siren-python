@@ -4,7 +4,7 @@ Quickstart::
 
     import siren
 
-    client = siren.Siren(api_key="sk_live_...")
+    client = siren.Siren()  # reads SIREN_API_KEY
     client.events.sale(
         source="stripe",
         external_id="cs_test_a1b2c3",
@@ -14,7 +14,7 @@ Quickstart::
 """
 
 from ._version import __version__
-from .app_requests import AppRequestHandler, AppRequestReply
+from .app_requests import AppRequestHandler, AppRequestReply, AppSimulation
 from .browser_tokens import BrowserTokenHandler
 from .client import Siren
 from .errors import (
@@ -100,6 +100,7 @@ __all__ = [
     "BrowserTokenHandler",
     "AppRequestHandler",
     "AppRequestReply",
+    "AppSimulation",
     # Errors
     "SirenError",
     "BadRequestError",

@@ -31,6 +31,8 @@ import pytest
 import respx
 
 import siren
+from siren import testing
+from siren._client import DEFAULT_BASE_URL
 
 ROOT = Path(__file__).resolve().parent.parent
 README = (ROOT / "README.md").read_text()
@@ -53,24 +55,18 @@ HEAD = FIRST[: FIRST.index("app = Flask")].replace("from flask import Flask\n", 
 
 
 def signed(kind: str = ASK):
-    body = json.dumps(CONTRACTS["kinds"][kind]["request"]).encode()
-    t = int(time.time())
-    v1 = hmac.new(SECRET.encode(), f"{t}.".encode() + body, hashlib.sha256).hexdigest()
-    headers = {
-        "Content-Type": "application/json",
-        "X-Siren-Event": "app.request",
-        "X-Siren-Delivery": CONTRACTS["requestKey"] + ".1",
-        "X-Siren-Timestamp": str(t),
-        "X-Siren-Signature-V2": f"t={t},v1={v1}",
-    }
-    return body, headers
+    """Siren's own request for the kind, signed by ``siren.testing.app_request()``."""
+    request = CONTRACTS["kinds"][kind]["request"]
+    made = testing.app_request(kind, request["item"]["key"], data=request["data"], secret=SECRET, id=CONTRACTS["requestKey"], app=CONTRACTS["app"])
+    return made.raw_body, made.headers
 
 
 @pytest.fixture
 def siren_api(monkeypatch):
     monkeypatch.setenv("SIREN_API_KEY", APP_KEY)
     monkeypatch.setenv("SIREN_SIGNING_SECRET", SECRET)
-    with respx.mock(base_url=CONTRACTS["apiBase"], assert_all_called=False) as mock:
+    # The first sample sets no base_url, so answers go to Siren Cloud's address.
+    with respx.mock(base_url=DEFAULT_BASE_URL, assert_all_called=False) as mock:
         yield mock
 
 
@@ -280,3 +276,26 @@ def test_by_hand_snippet_checks_and_answers_once():
     assert route.calls[0].request.headers["Authorization"] == f"Bearer {APP_KEY}"
     with pytest.raises(siren.SignatureVerificationError):
         scope["siren_request"](body + b" ", headers)
+
+
+def test_try_it_snippet_runs_as_a_pytest_file(siren_api):
+    """The README's "Try it without Siren" tests, run against the first
+    sample with the distribution resolver's function added, as the README
+    says. ``simulate()`` posts nothing, so the fake Siren sees no call."""
+    app = build(resolver=False)
+    function = re.search(r"<!-- readme-test: fn-distributionResolver -->\n```python\n(.*?)```", README, re.S)
+    assert function
+    exec(compile(function.group(1), "README.md", "exec"), app)
+    my_app = types.ModuleType("my_app")
+    my_app.answers = app["answers"]  # type: ignore[attr-defined]
+    sys.modules["my_app"] = my_app
+    try:
+        tests: Dict[str, Any] = {"__name__": "test_my_app"}
+        exec(compile(snippet("try-it"), "README.md (try-it)", "exec"), tests)
+    finally:
+        del sys.modules["my_app"]
+    ran = [name for name in tests if name.startswith("test_")]
+    assert ran == ["test_tells_the_crm", "test_splits_by_score"]
+    for name in ran:
+        tests[name]()
+    assert len(siren_api.calls) == 0

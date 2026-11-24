@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `siren.testing`, to try a request handler without Siren. `app_request(kind,
+  key)` builds a request signed as Siren signs one, with the kind's sample
+  question, and `sample_data(kind)` gives that question to change. The
+  samples ship in the package and a test holds them equal to Siren's request
+  fixture. The handler's `simulate(request)` runs every check and the
+  function, and returns an `AppSimulation` with the reply's `status` and
+  `body` and, for an ask, the `answer`, without posting it.
+- `siren.Siren()` reads `SIREN_API_KEY` and `apps.request_handler()` reads
+  `SIREN_SIGNING_SECRET` when no value is passed. A value passed in wins, and
+  a missing one raises `ValueError` naming the argument and the variable.
+- The handler replies 500 to an ask whose signed `answerUrl` is on another
+  Siren than the client's `base_url`, and `on_error` gets a `SirenError`
+  naming both addresses and the `base_url` to set. Siren Cloud's two hosts,
+  api.sirenaffiliates.com and app.sirenaffiliates.com, count as one Siren.
+  The answer still only goes to the client's own address.
+
 - Types for the three kinds that had none: `AppMetricCalculationQuestion`
   and `AppMetricCalculationAnswer` for the metric calculation
   (`metricCalculation`), `AppMetricFilterQuestion` and `AppMetricFilterAnswer`
@@ -122,6 +138,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- A signed body that is not an app request of version 1 gets a 400, and a
+  `SignatureVerificationError` from `apps.verify_request()`, whose words name
+  the first field that fails and its rule, such as "The request's `id` must
+  be `apr_` followed by 32 lowercase hex characters."
+- The README leads with answering Siren: what the SDK can do, Install with
+  the branch install lines while the apps code is unreleased, the first
+  sample with no `base_url`, and "Try it without Siren". Recording a sale
+  and verifying a webhook move below the app sections.
 - The README starts with what the SDK can do, then shows the request
   handler with a sample for Flask, Django, FastAPI or Starlette, any WSGI
   server and a plain call. A section for each feature kind, named as Siren
