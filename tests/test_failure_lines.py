@@ -21,7 +21,7 @@ SECRET = "cd" * 32
 REQUEST_ID = "apr_" + "b339" * 8
 ANSWER_PATH = f"/apps/requests/{REQUEST_ID}/answer"
 GOOD = {"outcome": "allocated", "units": "USD", "shares": {"41": 6000, "43": 4000}}
-RESEND = f"Resend it sooner from Needs attention in Siren Cloud, or with `siren apps resend {REQUEST_ID}`."
+RESEND = f"Resend it sooner with `siren apps resend {REQUEST_ID}`."
 
 
 def ask(answer_by=None):
@@ -42,6 +42,9 @@ def run(answers, request):
 
 def window_close(request):
     closes = datetime.fromisoformat(request.body["answerBy"]).astimezone(timezone.utc)
+    # The line names the date too when the window closes on another UTC day.
+    if closes.date() != datetime.now(timezone.utc).date():
+        return closes.strftime("%Y-%m-%d %H:%M UTC")
     return closes.strftime("%H:%M UTC")
 
 

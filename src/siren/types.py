@@ -6,7 +6,7 @@ import json
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, Iterator, List, Literal, Optional, Tuple, TypedDict, Union
+from typing import Any, Dict, Generic, Iterator, List, Literal, Optional, Tuple, TypedDict, TypeVar, Union
 
 
 class WebhookEventType(str, Enum):
@@ -130,8 +130,8 @@ class FeatureKind(str, Enum):
     """The kinds of feature an app can add, as Siren stores a feature's
     ``kind`` and sends it in an app request's ``feature["kind"]``. Each
     member's docs give the name Siren Cloud's screens show, from the kind
-    snapshot the SDK ships (``app_kinds.json``), and Siren's own term where
-    it differs.
+    snapshot the SDK ships (``app_kinds.json``), the term Siren's code uses
+    where it differs, and whether Siren asks or tells.
 
     A metric calculation (``METRIC_CALCULATION``) answers
     ``{"outcome": "scores", "results": [{"collaboratorId": 7, "score": 10}]}``.
@@ -192,22 +192,26 @@ class FeatureKind(str, Enum):
     # Generated from app_kinds.json by scripts/feature_kinds.py. Do not edit.
     POST_CONVERSION_ACTION = "postConversionAction"
     """Post-conversion action. Siren tells the app when a conversion is
-    approved in a program that picks this action.
+    approved in a program that picks this action. A tell: Siren lets the app
+    know.
     """
 
     POST_ALLOCATION_ACTION = "postAllocationAction"
     """Post-allocation action. Siren tells the app when an allocation completes
-    for a distributor that picks this action.
+    for a distributor that picks this action. A tell: Siren lets the app
+    know.
     """
 
     PAYOUT_METHOD = "payoutMethod"
     """Payout method. Siren asks the app to pay a payout, in the currencies it
-    names, when an autofulfiller picks this method.
+    names, when an autofulfiller picks this method. An ask: Siren waits for
+    the app to answer.
     """
 
     DISTRIBUTION_RESOLVER = "distributionResolver"
     """Distribution resolver. Siren asks the app how to divide a distribution's
-    pool when its distributor picks this resolver.
+    pool when its distributor picks this resolver. An ask: Siren waits for
+    the app to answer.
     """
 
     CUSTOM_EVENT = "customEvent"
@@ -217,57 +221,65 @@ class FeatureKind(str, Enum):
     """
 
     METRIC_CALCULATION = "metricCalculation"
-    """Metric calculation. Siren's own term is calculation strategy. Siren asks
-    the app who scores, and how much, each time a metric triggers for a
-    distributor whose metric type picks this calculation.
+    """Metric calculation. Siren's code calls it the calculation strategy.
+    Siren asks the app who scores, and how much, each time a metric triggers
+    for a distributor whose metric type picks this calculation. An ask:
+    Siren waits for the app to answer.
     """
 
     METRIC_FILTER = "metricFilter"
-    """Customer filter for distributors. Siren's own term is metric filter.
-    Siren asks the app whether a metric may score each time one triggers for
-    a distributor that picks this filter.
+    """Customer filter for distributors. Siren's code calls it the metric
+    filter. Siren asks the app whether a metric may score each time one
+    triggers for a distributor that picks this filter. An ask: Siren waits
+    for the app to answer.
     """
 
     INCENTIVE_RESOLVER = "incentiveResolver"
-    """Attribution model. Siren's own term is incentive resolver. Siren asks
-    the app how to split a program's reward among the collaborators a sale
-    or lead converted, when the program picks this resolver.
+    """Attribution model. Siren's code calls it the incentive resolver. Siren
+    asks the app how to split a program's reward among the collaborators a
+    sale or lead converted, when the program picks this resolver. An ask:
+    Siren waits for the app to answer.
     """
 
     TRANSACTION_FILTER = "transactionFilter"
-    """Transaction filter. Siren's own term is transaction compiler. Siren asks
-    the app which of a sale's lines count, once per sale for each program or
-    distributor that picks this filter.
+    """Transaction filter. Siren's code calls it the transaction compiler.
+    Siren asks the app which of a sale's lines count, once per sale for each
+    program or distributor that picks this filter. An ask: Siren waits for
+    the app to answer.
     """
 
     INCENTIVE_TYPE = "incentiveType"
-    """Incentive structure. Siren's own term is incentive type. Siren asks the
-    app which engagements a sale, lead or renewal converts on a program that
-    picks this structure, and the reward pool they share.
+    """Incentive structure. Siren's code calls it the incentive type. Siren
+    asks the app which engagements a sale, lead or renewal converts on a
+    program that picks this structure, and the reward pool they share. An
+    ask: Siren waits for the app to answer.
     """
 
     ENGAGEMENT_CALCULATION = "engagementCalculation"
-    """Engagement calculation. Siren's own term is calculation strategy. Siren
-    asks the app who earns an engagement, and its score, each time one
-    triggers for a program whose engagement type picks this calculation.
+    """Engagement calculation. Siren's code calls it the calculation strategy.
+    Siren asks the app who earns an engagement, and its score, each time one
+    triggers for a program whose engagement type picks this calculation. An
+    ask: Siren waits for the app to answer.
     """
 
     ENGAGEMENT_FILTER = "engagementFilter"
-    """Customer filter for programs. Siren's own term is engagement filter.
-    Siren asks the app whether an engagement may be written each time one
-    triggers for a program that picks this filter.
+    """Customer filter for programs. Siren's code calls it the engagement
+    filter. Siren asks the app whether an engagement may be written each
+    time one triggers for a program that picks this filter. An ask: Siren
+    waits for the app to answer.
     """
 
     PROGRAM_GROUP_SORTER = "programGroupSorter"
-    """Program group structure. Siren's own term is group sorter. Siren asks
-    the app which program of a program group a sale or lead tries first,
-    when the group picks this structure.
+    """Program group structure. Siren's code calls it the group sorter. Siren
+    asks the app which program of a program group a sale or lead tries
+    first, when the group picks this structure. An ask: Siren waits for the
+    app to answer.
     """
 
     COLLABORATOR_GROUP_STRUCTURE = "collaboratorGroupStructure"
     """Collaborator group structure. Siren asks the app who sits above and
     below whom in a collaborator group each time a cascade runs over a group
-    that picks this structure.
+    that picks this structure. An ask: Siren waits for the app to answer.
     """
     # End of the generated members.
 
@@ -336,10 +348,16 @@ class AppRequestFeature(TypedDict):
     id: str
 
 
+#: A request's ``data``: the kind's question for an ask, or its data for a tell.
+D = TypeVar("D")
+
+
 @dataclass(frozen=True)
-class AppRequest:
+class AppRequest(Generic[D]):
     """A request Siren signed and sent an app, as ``apps.verify_request()``
-    returns it once the signature, the time and the envelope check out.
+    returns it once the signature, the time and the envelope check out: an
+    :class:`AppAsk` or an :class:`AppTell`. ``D`` is the type of its
+    ``data``, such as ``AppAsk[DistributionResolverQuestion]``.
 
     Three ids, and one to dedupe on:
 
@@ -352,7 +370,7 @@ class AppRequest:
       delivery and changes on every send.
 
     ``mode`` is ``tell``, which waits for no answer, or ``ask``, answered by
-    ``answer_by``. ``feature`` holds the feature's ``kind``, ``key`` and ``id``.
+    ``answer_by``, an ISO 8601 time as Siren sends it. ``feature`` holds the feature's ``kind``, ``key`` and ``id``.
     ``data`` is the question. ``timestamp`` is the Unix time Siren signed
     the send at. ``raw`` holds the whole body.
     """
@@ -366,7 +384,7 @@ class AppRequest:
     created_at: str
     answer_by: Optional[str]
     answer_url: Optional[str]
-    data: Dict[str, Any]
+    data: D
     timestamp: int
     delivery_id: Optional[str] = None
     raw: Dict[str, Any] = field(default_factory=dict)
@@ -375,6 +393,19 @@ class AppRequest:
     def is_ask(self) -> bool:
         """Whether Siren waits for an answer to this request."""
         return self.mode == "ask"
+
+
+@dataclass(frozen=True)
+class AppAsk(AppRequest[D]):
+    """A request that waits for the app's answer: ``mode`` is ``ask``, and
+    ``answer_by`` and ``answer_url`` say when and where. ``D`` is the kind's
+    question, such as ``AppAsk[DistributionResolverQuestion]``."""
+
+
+@dataclass(frozen=True)
+class AppTell(AppRequest[D]):
+    """A request that needs no answer: ``mode`` is ``tell``. ``D`` is the
+    kind's data, such as ``AppTell[PostConversionActionTell]``."""
 
 
 @dataclass(frozen=True)
@@ -493,17 +524,23 @@ class ListPage:
     def __getitem__(self, index: int) -> Dict[str, Any]:
         return self.data[index]
 
-
 # What Siren asks each kind of app feature, and what it takes back. Each is
 # the request's ``data``, or the answer an ask's function returns, with
-# Siren's own key names. Siren's fixture
-# tests/Fixtures/apps-feature-contracts/requests.json holds an example of each.
+# Siren's own key names. Each kind's types are named from the kind: the kind
+# in PascalCase, then ``Tell`` for a tell's data, ``Question`` for an ask's
+# question and ``Answer`` for its answer, the same names the Node and PHP
+# SDKs use. Each shape follows the Siren builder named in its docstring, on
+# Siren's feat/apps. Siren's fixture
+# tests/Fixtures/apps-feature-contracts/requests.json holds an example of
+# each, and tests/test_typecheck.py holds every example to these types.
 
 
 class AppCurrency(TypedDict):
-    """A currency as Siren's API sends one. A shown amount is
-    ``value / 10 ** scale``, and the smallest part a person sees is
-    ``10 ** (scale - decimalPlaces)`` in the stored form."""
+    """A currency as Siren's API sends one (``CurrencyAdapter::toArray()``).
+    A shown amount is ``value / 10 ** scale``, and the smallest part a
+    person sees is ``10 ** (scale - decimalPlaces)`` in the stored form.
+    ``position`` is ``before`` or ``after``, and ``type`` is ``monetary`` for
+    money or ``internal`` for points or store credit."""
 
     id: str
     symbol: str
@@ -522,6 +559,91 @@ class AppAmount(TypedDict):
     currency: AppCurrency
 
 
+class AppIdName(TypedDict):
+    """A record Siren names in a question, such as a program, a
+    distributor or a collaborator: its ``id`` and its ``name``."""
+
+    id: int
+    name: str
+
+
+class AppId(TypedDict):
+    """A record Siren names in a question by its ``id`` alone, such as an
+    opportunity or a distribution."""
+
+    id: int
+
+
+class AppCollaboratorScore(TypedDict):
+    """One result of a calculation's answer: a collaborator and a score, a
+    whole number of 0 or more."""
+
+    collaboratorId: int
+    score: int
+
+
+# postConversionAction and postAllocationAction, Siren's AppActionSubjects.
+
+
+class PostConversionActionConversion(TypedDict):
+    """The approved conversion in a ``postConversionAction`` tell.
+    ``transactionId`` is ``None`` for a lead, and ``obligationId`` when the
+    conversion owes nothing."""
+
+    id: int
+    type: str
+    status: str
+    engagementId: int
+    opportunityId: int
+    collaboratorId: int
+    transactionId: Optional[int]
+    obligationId: Optional[int]
+
+
+class PostConversionActionTell(TypedDict):
+    """``postConversionAction`` (a tell): a conversion was approved
+    (``AppActionSubjects::forConversion()``). ``reward`` is the stored
+    amount the conversion earned, or ``None`` when it has no reward."""
+
+    conversion: PostConversionActionConversion
+    reward: Optional[AppAmount]
+    program: AppIdName
+
+
+class PostAllocationActionAllocation(TypedDict):
+    """The completed allocation in a ``postAllocationAction`` tell.
+    ``value`` is a stored whole number in ``units``."""
+
+    distributionId: int
+    obligationId: int
+    collaboratorId: int
+    status: str
+    value: int
+    units: str
+    currency: AppCurrency
+
+
+class PostAllocationActionTell(TypedDict):
+    """``postAllocationAction`` (a tell): an allocation completed
+    (``AppActionSubjects::forAllocation()``). The subject id is
+    ``{distributionId}:{obligationId}``."""
+
+    allocation: PostAllocationActionAllocation
+    distributor: AppIdName
+
+
+# distributionResolver, Siren's AppDistributionQuestion::build().
+
+
+class DistributionResolverDistribution(TypedDict):
+    """The period a distribution question divides, ISO 8601 times."""
+
+    id: int
+    distributorId: int
+    periodStart: str
+    periodEnd: str
+
+
 class AppDistributionPool(AppAmount):
     """What a distribution question offers. ``value`` is ``total`` less
     ``paid``, what the distribution's collaborators already hold from it."""
@@ -531,111 +653,197 @@ class AppDistributionPool(AppAmount):
 
 
 class AppDistributionMetric(TypedDict):
+    """One collaborator's metric in the period: the score and how many
+    times a trigger counted."""
+
     metricId: int
     collaboratorId: int
-    score: float
+    score: int
     triggerCount: int
 
 
-class AppDistributionQuestion(TypedDict):
-    """``distributionResolver`` (an ask): split ``pool`` among ``metrics``."""
+class DistributionResolverQuestion(TypedDict):
+    """``distributionResolver`` (an ask): split ``pool`` among ``metrics``
+    (``AppDistributionQuestion::build()``)."""
 
-    distribution: Dict[str, Any]
-    distributor: Dict[str, Any]
+    distribution: DistributionResolverDistribution
+    distributor: AppIdName
     pool: AppDistributionPool
     metrics: List[AppDistributionMetric]
 
 
-class AppDistributionAnswer(TypedDict):
+class DistributionResolverAnswer(TypedDict):
     """One share per metric id, 0 or more, each a whole step of the
     currency, adding up to at most ``pool.value``. ``outcome`` is
     ``allocated`` and ``units`` the pool's units."""
 
-    outcome: str
+    outcome: Literal["allocated"]
     units: str
     shares: Dict[str, int]
 
 
-class AppRewardConversion(TypedDict):
+# incentiveResolver, Siren's AppRewardQuestion::build().
+
+
+class IncentiveResolverProgram(TypedDict):
+    """The program in an ``incentiveResolver`` ask, with its ``status`` as
+    it was at the sale."""
+
+    id: int
+    name: str
+    status: str
+
+
+class AppTransaction(TypedDict):
+    """The sale an ``incentiveResolver`` ask is about: its ``id``, its
+    ``units`` and its currency."""
+
+    id: int
+    units: str
+    currency: AppCurrency
+
+
+class IncentiveResolverConversion(TypedDict):
+    """One conversion in an ``incentiveResolver`` ask.
+    ``collaboratorStatus`` is as it was at the sale, and
+    ``engagementCreatedDate`` an ISO 8601 time."""
+
     conversionId: int
     engagementId: int
     collaboratorId: int
     collaboratorStatus: str
-    score: float
+    score: int
     engagementCreatedDate: str
 
 
-class AppRewardQuestion(TypedDict):
+class IncentiveResolverQuestion(TypedDict):
     """``incentiveResolver`` (an ask): reward the ``conversions`` one award
-    made from ``pool``. ``reason`` is ``sale``, or ``refund`` when a partial
-    refund asks again. ``transaction`` is ``None`` for a lead."""
+    made from ``pool`` (``AppRewardQuestion::build()``). ``reason`` is
+    ``sale``, or ``refund`` when a partial refund asks again.
+    ``transaction`` is ``None`` for a lead."""
 
-    reason: str
-    program: Dict[str, Any]
+    reason: Literal["sale", "refund"]
+    program: IncentiveResolverProgram
     conversionType: str
-    transaction: Optional[Dict[str, Any]]
+    transaction: Optional[AppTransaction]
     pool: AppAmount
-    conversions: List[AppRewardConversion]
+    conversions: List[IncentiveResolverConversion]
 
 
-class AppRewardAnswer(TypedDict):
+class IncentiveResolverAnswer(TypedDict):
     """A key for every conversion id of the question, ``None`` for one the
     app did not choose or a whole number of 0 or more. ``outcome`` is
     ``rewards`` and ``units`` the pool's units."""
 
-    outcome: str
+    outcome: Literal["rewards"]
     units: str
     rewards: Dict[str, Optional[int]]
 
 
+# incentiveType, Siren's AppIncentiveTypeQuestion::build().
+
+
+class IncentiveTypeProgram(TypedDict):
+    """The program in an ``incentiveType`` ask, with the ``units`` its pool
+    is in."""
+
+    id: int
+    name: str
+    units: str
+
+
+class IncentiveTypeLine(TypedDict):
+    """One line of the transaction in an ``incentiveType`` ask, refund
+    lines included. ``value`` is a stored whole number."""
+
+    id: int
+    type: str
+    name: str
+    quantity: int
+    value: int
+
+
+class IncentiveTypeTransaction(TypedDict):
+    """The sale in an ``incentiveType`` ask. ``total`` is the sum of its
+    lines in the stored form. ``currency`` is ``None`` when Siren has no
+    currency for the sale's units."""
+
+    id: int
+    status: str
+    units: str
+    currency: Optional[AppCurrency]
+    total: int
+    lines: List[IncentiveTypeLine]
+
+
+class IncentiveTypeBinding(TypedDict):
+    """What a lead is bound by, in place of a transaction."""
+
+    type: str
+    id: str
+
+
+class IncentiveTypeConversion(TypedDict):
+    """One conversion of the award a refund asks again about."""
+
+    conversionId: int
+    engagementId: int
+
+
 class AppIncentiveTypeEngagement(TypedDict):
+    """One engagement in an ``incentiveType`` ask. ``createdDate`` is an
+    ISO 8601 time."""
+
     engagementId: int
     collaboratorId: int
-    score: float
+    score: int
     createdDate: str
 
 
-class _AppIncentiveTypeQuestionFields(TypedDict):
-    reason: str
-    program: Dict[str, Any]
+class _IncentiveTypeQuestionFields(TypedDict):
+    reason: Literal["sale", "refund"]
+    program: IncentiveTypeProgram
     conversionType: str
-    opportunity: Dict[str, int]
-    transaction: Optional[Dict[str, Any]]
-    binding: Optional[Dict[str, str]]
+    opportunity: AppId
+    transaction: Optional[IncentiveTypeTransaction]
+    binding: Optional[IncentiveTypeBinding]
     engagements: List[AppIncentiveTypeEngagement]
 
 
-class AppIncentiveTypeQuestion(_AppIncentiveTypeQuestionFields, total=False):
+class IncentiveTypeQuestion(_IncentiveTypeQuestionFields, total=False):
     """``incentiveType`` (an ask): which engagements one sale, lead or
-    renewal converts on the ``program``, and the pool its resolver divides.
-    ``reason`` is ``sale`` until the award is made, and ``refund`` when a
-    partial refund asks again about an award already made, which then lists
-    the award's ``conversions``. ``transaction`` is ``None`` for a lead,
-    which names its ``binding`` instead. Its ``total`` and each line's
-    ``value`` are stored whole numbers."""
+    renewal converts on the ``program``, and the pool its resolver divides
+    (``AppIncentiveTypeQuestion::build()``). ``reason`` is ``sale`` until
+    the award is made, and ``refund`` when a partial refund asks again about
+    an award already made, which then lists the award's ``conversions``.
+    ``transaction`` is ``None`` for a lead, which names its ``binding``
+    instead."""
 
-    conversions: List[Dict[str, int]]
+    conversions: List[IncentiveTypeConversion]
 
 
-class AppIncentiveTypeAwardAnswer(TypedDict):
+class IncentiveTypeAwardAnswer(TypedDict):
     """The engagements of the question that convert, each once, and the
     ``pool``, a whole number of 0 or more in the program's ``units``.
     ``outcome`` is ``award``."""
 
-    outcome: str
+    outcome: Literal["award"]
     units: str
     pool: int
     engagementIds: List[int]
 
 
-class AppIncentiveTypeNoneAnswer(TypedDict):
+class IncentiveTypeNoneAnswer(TypedDict):
     """Award nothing on the program. ``outcome`` is ``none``."""
 
-    outcome: str
+    outcome: Literal["none"]
 
 
-AppIncentiveTypeAnswer = Union[AppIncentiveTypeAwardAnswer, AppIncentiveTypeNoneAnswer]
+IncentiveTypeAnswer = Union[IncentiveTypeAwardAnswer, IncentiveTypeNoneAnswer]
 """The answer to an ``incentiveType`` ask."""
+
+
+# metricCalculation and metricFilter, Siren's AppMetricQuestion.
 
 
 class AppMetricCause(TypedDict):
@@ -657,45 +865,50 @@ class AppMetricSale(TypedDict):
     excludedLineIds: List[int]
 
 
-class AppMetricCalculationQuestion(TypedDict):
-    """``metricCalculation`` (an ask): score one metric for a distributor's
-    period. ``distributor`` and ``triggeringCollaborator`` hold ``id`` and
-    ``name``, and ``distribution`` holds ``id`` and ``periodEnd``, an ISO
-    8601 time. ``distributorMetricTypeId`` is the distributor's metric type
-    row that picks the calculation. ``opportunityId`` and ``points`` may be
-    ``None``, and ``sale`` is ``None`` when no sale caused the metric."""
+class MetricCalculationDistribution(TypedDict):
+    """The period a metric is scored in. ``periodEnd`` is an ISO 8601 time."""
 
-    distributor: Dict[str, Any]
-    distribution: Dict[str, Any]
+    id: int
+    periodEnd: str
+
+
+class MetricCalculationQuestion(TypedDict):
+    """``metricCalculation`` (an ask): score one metric for a distributor's
+    period (``AppMetricQuestion``). ``distributorMetricTypeId`` is the
+    distributor's metric type row that picks the calculation.
+    ``opportunityId`` and ``points`` may be ``None``, and ``sale`` is
+    ``None`` when no sale caused the metric."""
+
+    distributor: AppIdName
+    distribution: MetricCalculationDistribution
     metricType: str
     distributorMetricTypeId: int
-    triggeringCollaborator: Dict[str, Any]
+    triggeringCollaborator: AppIdName
     opportunityId: Optional[int]
     points: Optional[int]
     cause: AppMetricCause
     sale: Optional[AppMetricSale]
 
 
-class AppMetricCalculationAnswer(TypedDict):
+class MetricCalculationAnswer(TypedDict):
     """Who scores and how much: at most 50 results, each collaborator once,
     each in the organization and not in the trash, and each score a whole
     number of 0 or more. An empty list scores nobody. ``outcome`` is
     ``scores``."""
 
     outcome: Literal["scores"]
-    results: List[Dict[str, int]]
+    results: List[AppCollaboratorScore]
 
 
-class AppMetricFilterQuestion(TypedDict):
+class MetricFilterQuestion(TypedDict):
     """``metricFilter`` (an ask): whether one ``collaborator``'s metric
-    counts for a distributor. ``distributor`` and ``collaborator`` hold
-    ``id`` and ``name``, and ``distribution`` holds ``id``.
-    ``opportunityId`` and ``points`` may be ``None``, and ``sale`` is
-    ``None`` when no sale caused the metric."""
+    counts for a distributor (``AppMetricQuestion``). ``opportunityId`` and
+    ``points`` may be ``None``, and ``sale`` is ``None`` when no sale caused
+    the metric."""
 
-    distributor: Dict[str, Any]
-    distribution: Dict[str, Any]
-    collaborator: Dict[str, Any]
+    distributor: AppIdName
+    distribution: AppId
+    collaborator: AppIdName
     metricType: str
     opportunityId: Optional[int]
     points: Optional[int]
@@ -703,13 +916,25 @@ class AppMetricFilterQuestion(TypedDict):
     sale: Optional[AppMetricSale]
 
 
-class AppMetricFilterAnswer(TypedDict, total=False):
-    """``outcome`` is ``allow``, which counts the metric, or ``suppress``,
-    which drops it. A suppress gives a plain text ``reason`` of 1 to 200
-    characters."""
+class MetricFilterAllowAnswer(TypedDict):
+    """Count the metric. ``outcome`` is ``allow``."""
 
-    outcome: str
+    outcome: Literal["allow"]
+
+
+class MetricFilterSuppressAnswer(TypedDict):
+    """Drop the metric, with a plain text ``reason`` of 1 to 200
+    characters. ``outcome`` is ``suppress``."""
+
+    outcome: Literal["suppress"]
     reason: str
+
+
+MetricFilterAnswer = Union[MetricFilterAllowAnswer, MetricFilterSuppressAnswer]
+"""The answer to a ``metricFilter`` ask: allow, or suppress with a reason."""
+
+
+# engagementCalculation and engagementFilter, Siren's AppEngagementQuestion.
 
 
 class AppEngagementCause(TypedDict):
@@ -722,92 +947,133 @@ class AppEngagementCause(TypedDict):
     occurredAt: str
 
 
-class AppEngagementCalculationQuestion(TypedDict):
-    """``engagementCalculation`` (an ask): who earns an engagement, and its
-    score, when a program's engagement type triggers. ``args`` holds the
-    settings a person gave the engagement type, as text by name.
-    ``opportunity["customerId"]`` is the customer Siren matched, or ``None``."""
+class AppEngagementOpportunity(TypedDict):
+    """The opportunity in an engagement ask, with the customer Siren
+    matched it to, or ``None``."""
 
-    program: Dict[str, Any]
+    id: int
+    customerId: Optional[int]
+
+
+class EngagementCalculationQuestion(TypedDict):
+    """``engagementCalculation`` (an ask): who earns an engagement, and its
+    score, when a program's engagement type triggers
+    (``AppEngagementQuestion::forCalculation()``). ``args`` holds the
+    settings a person gave the engagement type, as text by name. Siren
+    sends an empty ``args`` as ``[]`` today, and the SDK reads that as
+    ``{}``."""
+
+    program: AppIdName
     engagementType: str
     programEngagementTypeId: int
     args: Dict[str, str]
-    opportunity: Dict[str, Any]
-    triggeringCollaborator: Dict[str, Any]
+    opportunity: AppEngagementOpportunity
+    triggeringCollaborator: AppIdName
     cause: AppEngagementCause
 
 
-class AppEngagementCalculationAnswer(TypedDict):
+class EngagementCalculationAnswer(TypedDict):
     """Who earns an engagement and its score, at most 50 results, each
     collaborator once and each score a whole number of 0 or more.
     ``outcome`` is ``engagements``."""
 
-    outcome: str
-    results: List[Dict[str, int]]
+    outcome: Literal["engagements"]
+    results: List[AppCollaboratorScore]
 
 
-class AppEngagementFilterQuestion(TypedDict):
+class EngagementFilterQuestion(TypedDict):
     """``engagementFilter`` (an ask): whether an engagement may be made for
-    ``collaborator`` on ``program``."""
+    ``collaborator`` on ``program`` (``AppEngagementQuestion::forFilter()``)."""
 
-    program: Dict[str, Any]
-    collaborator: Dict[str, Any]
-    opportunity: Dict[str, Any]
+    program: AppIdName
+    collaborator: AppIdName
+    opportunity: AppEngagementOpportunity
     engagementType: str
     cause: AppEngagementCause
 
 
-class AppEngagementFilterAnswer(TypedDict, total=False):
-    """``outcome`` is ``allow`` or ``suppress``. A suppress gives a plain
-    text ``reason`` of 1 to 200 characters."""
+class EngagementFilterAllowAnswer(TypedDict):
+    """Make the engagement. ``outcome`` is ``allow``."""
 
-    outcome: str
+    outcome: Literal["allow"]
+
+
+class EngagementFilterSuppressAnswer(TypedDict):
+    """Stop the engagement, with a plain text ``reason`` of 1 to 200
+    characters, which Siren notes on the opportunity. ``outcome`` is
+    ``suppress``."""
+
+    outcome: Literal["suppress"]
     reason: str
 
 
-class AppGroupOrderEngagement(TypedDict):
+EngagementFilterAnswer = Union[EngagementFilterAllowAnswer, EngagementFilterSuppressAnswer]
+"""The answer to an ``engagementFilter`` ask: allow, or suppress with a
+reason."""
+
+
+# programGroupSorter, Siren's AppGroupOrderQuestion::build().
+
+
+class ProgramGroupSorterEngagement(TypedDict):
+    """One active engagement a program holds on the opportunity at the
+    sale. ``createdDate`` is an ISO 8601 time."""
+
     engagementId: int
     collaboratorId: int
-    score: float
+    score: int
     createdDate: str
 
 
-class AppGroupOrderProgram(TypedDict):
+class ProgramGroupSorterProgram(TypedDict):
+    """One program of the group, with its engagements oldest first."""
+
     id: int
     name: str
-    engagements: List[AppGroupOrderEngagement]
+    engagements: List[ProgramGroupSorterEngagement]
 
 
-class AppGroupOrderQuestion(TypedDict):
-    """``programGroupSorter`` (an ask): order the group's ``programs`` for
-    one sale or lead. ``programs`` holds each program of the group that takes
-    the conversion once, in the group's order, with its active engagements on
-    the opportunity, oldest first. ``transaction`` is ``None`` for a lead, and
-    its ``total`` is a stored whole number."""
-
-    group: Dict[str, Any]
-    conversionType: str
-    opportunity: Dict[str, Any]
-    transaction: Optional[Dict[str, Any]]
-    programs: List[AppGroupOrderProgram]
-
-
-class AppGroupOrderAnswer(TypedDict):
-    """Every program id of the question exactly once, in the order Siren
-    tries them. ``outcome`` is ``sorted``."""
-
-    outcome: str
-    programIds: List[int]
-
-
-class AppTransaction(TypedDict):
-    """The sale a transaction filter question is about: its ``id``, its
-    ``units`` and its currency, the same currency an incentive resolver
-    question carries."""
+class ProgramGroupSorterTransaction(TypedDict):
+    """The sale a ``programGroupSorter`` ask is about. ``total`` is a
+    stored whole number."""
 
     id: int
     units: str
-    currency: AppCurrency
+    total: int
+
+
+class ProgramGroupSorterQuestion(TypedDict):
+    """``programGroupSorter`` (an ask): order the group's ``programs`` for
+    one sale or lead (``AppGroupOrderQuestion::build()``). ``programs``
+    holds each program of the group that takes the conversion once, in the
+    group's order. ``transaction`` is ``None`` for a lead."""
+
+    group: AppIdName
+    conversionType: str
+    opportunity: AppId
+    transaction: Optional[ProgramGroupSorterTransaction]
+    programs: List[ProgramGroupSorterProgram]
+
+
+class ProgramGroupSorterAnswer(TypedDict):
+    """Every program id of the question exactly once, in the order Siren
+    tries them. ``outcome`` is ``sorted``."""
+
+    outcome: Literal["sorted"]
+    programIds: List[int]
+
+
+# transactionFilter, Siren's AppTransactionFilterQuestion::build().
+
+
+class TransactionFilterTransaction(TypedDict):
+    """The sale a ``transactionFilter`` ask is about. ``currency`` is
+    ``None`` for a sale with no lines, which Siren's builder allows
+    (``'currency' => $first === null ? null : ...``)."""
+
+    id: int
+    units: str
+    currency: Optional[AppCurrency]
 
 
 class AppTransactionLine(TypedDict):
@@ -823,30 +1089,37 @@ class AppTransactionLine(TypedDict):
     productId: Optional[str]
 
 
+class TransactionFilterFor(TypedDict):
+    """The program or distributor a ``transactionFilter`` ask is for."""
+
+    type: Literal["program", "distributor"]
+    id: int
+    name: str
+
+
 # ``for`` is a Python keyword, so the question uses the functional form.
-AppTransactionFilterQuestion = TypedDict(
-    "AppTransactionFilterQuestion",
+TransactionFilterQuestion = TypedDict(
+    "TransactionFilterQuestion",
     {
-        "for": Dict[str, Any],
-        "transaction": AppTransaction,
+        "for": TransactionFilterFor,
+        "transaction": TransactionFilterTransaction,
         "lines": List[AppTransactionLine],
-        "distribution": Optional[Dict[str, Any]],
-        "refundDistribution": Optional[Dict[str, Any]],
+        "distribution": Optional[AppId],
+        "refundDistribution": Optional[AppId],
     },
 )
-AppTransactionFilterQuestion.__doc__ = """``transactionFilter`` (an ask): say which
+TransactionFilterQuestion.__doc__ = """``transactionFilter`` (an ask): say which
 of the sale's own ``lines`` count, once per sale for each program or
-distributor that picks the filter. ``for`` holds ``type``, ``program`` or
-``distributor``, its ``id`` and its ``name``. The subject id is
-``{opportunityId}:{programId}:t{transactionId}`` for a program's lines and
-``{distributorId}:t{transactionId}`` for a distributor's. ``distribution`` is
-``None`` for a program, and for a distributor ``{"id": ...}``, the period the
-sale's value lands in. ``refundDistribution`` is ``None``, or the later period
-a refund came in while the ask was open. A refund reuses the stored answer,
-so Siren never sends refund lines."""
+distributor that picks the filter (``AppTransactionFilterQuestion::build()``).
+The subject id is ``{opportunityId}:{programId}:t{transactionId}`` for a
+program's lines and ``{distributorId}:t{transactionId}`` for a
+distributor's. ``distribution`` is ``None`` for a program, and for a
+distributor the period the sale's value lands in. ``refundDistribution`` is
+``None``, or the later period a refund came in while the ask was open. A
+refund reuses the stored answer, so Siren never sends refund lines."""
 
 
-class AppTransactionFilterAnswer(TypedDict):
+class TransactionFilterAnswer(TypedDict):
     """The ids of the question's lines that count, each at most once. An
     empty list includes nothing. A line counts when any filter the record
     picks includes it. Siren refuses an id the question lacks with 422
@@ -856,10 +1129,15 @@ class AppTransactionFilterAnswer(TypedDict):
     include: List[int]
 
 
+# collaboratorGroupStructure, Siren's AppGroupStructureQuestion.
+
+
 class AppCollaboratorGroupMember(TypedDict):
     """One member of a collaborator group in a group structure question.
     ``status`` is the collaborator's status at the trigger, such as
-    ``active`` or ``inactive``, which Siren credits the member by."""
+    ``active`` or ``inactive``, which Siren credits the member by.
+    ``metadata`` is the member's metadata as the group holds it, which has
+    no fixed shape."""
 
     collaboratorId: int
     name: str
@@ -867,59 +1145,69 @@ class AppCollaboratorGroupMember(TypedDict):
     metadata: Dict[str, Any]
 
 
-# ``for`` is a Python keyword, so the question uses the functional form.
-AppCollaboratorGroupStructureQuestion = TypedDict(
-    "AppCollaboratorGroupStructureQuestion",
+class CollaboratorGroupStructureFor(TypedDict):
+    """The program (an engagement cascade) or distributor (a metric
+    cascade) a group structure question is for."""
+
+    type: Literal["program", "distributor"]
+    id: int
+
+
+# ``for`` is a Python keyword, so the shared fields use the functional form.
+_CollaboratorGroupStructureFields = TypedDict(
+    "_CollaboratorGroupStructureFields",
     {
-        "group": Dict[str, Any],
+        "group": AppIdName,
         "members": List[AppCollaboratorGroupMember],
-        "for": Dict[str, Any],
-        "triggeringCollaborator": Dict[str, Any],
-        "cause": Dict[str, Any],
+        "for": CollaboratorGroupStructureFor,
+        "triggeringCollaborator": AppIdName,
     },
 )
-AppCollaboratorGroupStructureQuestion.__doc__ = """``collaboratorGroupStructure`` (an ask): give
-the ``group``'s shape among its ``members``, once per cascade trigger on the
-group. ``for`` holds ``type``, ``program`` (an engagement cascade) or
-``distributor`` (a metric cascade), and ``id``. ``cause["id"]`` is 16 hex
-characters, the trigger's own random id. The question also carries the keys
-of the trigger it interrupts, which differ by side and are not listed here.
-:class:`AppCollaboratorGroupStructureDistributorQuestion` lists a
-distributor's and :class:`AppCollaboratorGroupStructureProgramQuestion` a
-program's."""
 
 
-class AppCollaboratorGroupStructureDistributorQuestion(AppCollaboratorGroupStructureQuestion):
-    """A group structure question for a distributor's metric cascade. It
-    carries a metric calculation's keys beside the group's, and its
-    ``cause`` holds ``id``, ``type`` and ``causeId`` as a metric's does.
-    ``opportunityId``, ``points`` and ``sale`` may be ``None``."""
+class CollaboratorGroupStructureDistributorQuestion(_CollaboratorGroupStructureFields):
+    """``collaboratorGroupStructure`` (an ask) for a distributor's metric
+    cascade (``AppGroupStructureQuestion``). It carries a metric
+    calculation's keys beside the group's, and its ``cause`` is a
+    metric's. ``opportunityId``, ``points`` and ``sale`` may be ``None``."""
 
-    distributor: Dict[str, Any]
-    distribution: Dict[str, Any]
+    distributor: AppIdName
+    distribution: MetricCalculationDistribution
     metricType: str
     distributorMetricTypeId: int
     opportunityId: Optional[int]
     points: Optional[int]
-    sale: Optional[Dict[str, Any]]
+    cause: AppMetricCause
+    sale: Optional[AppMetricSale]
 
 
-class AppCollaboratorGroupStructureProgramQuestion(AppCollaboratorGroupStructureQuestion):
-    """A group structure question for a program's engagement cascade. It
-    carries an engagement calculation's keys beside the group's, and its
-    ``cause`` is an engagement's. ``args`` holds the settings a person gave
-    the engagement type, as text by name, or an empty dict.
-    ``opportunity["customerId"]`` may be ``None``."""
+class CollaboratorGroupStructureProgramQuestion(_CollaboratorGroupStructureFields):
+    """``collaboratorGroupStructure`` (an ask) for a program's engagement
+    cascade (``AppGroupStructureQuestion::forEngagement()``). It carries an
+    engagement calculation's keys beside the group's, and its ``cause`` is
+    an engagement's. ``args`` holds the settings a person gave the
+    engagement type, as text by name, and the SDK reads an empty ``[]`` as
+    ``{}``."""
 
-    program: Dict[str, Any]
+    program: AppIdName
     engagementType: str
     programEngagementTypeId: int
     args: Dict[str, str]
-    opportunity: Dict[str, Any]
+    opportunity: AppEngagementOpportunity
     cause: AppEngagementCause
 
 
-class AppCollaboratorGroupChain(TypedDict):
+CollaboratorGroupStructureQuestion = Union[
+    CollaboratorGroupStructureDistributorQuestion, CollaboratorGroupStructureProgramQuestion
+]
+"""``collaboratorGroupStructure`` (an ask): give the ``group``'s shape among
+its ``members``, once per cascade trigger on the group. ``for`` says which
+side asks: ``distributor`` (a metric cascade) or ``program`` (an engagement
+cascade). ``cause["id"]`` is 16 hex characters, the trigger's own random
+id."""
+
+
+class CollaboratorGroupStructureChainAnswer(TypedDict):
     """A chain answer: ``order`` lists every member's ``collaboratorId`` of
     the question once, top of the chain first. Siren reads it as its
     built-in linear chain. ``outcome`` is ``structure``."""
@@ -929,7 +1217,7 @@ class AppCollaboratorGroupChain(TypedDict):
     order: List[int]
 
 
-class AppCollaboratorGroupTree(TypedDict):
+class CollaboratorGroupStructureTreeAnswer(TypedDict):
     """A tree answer: ``parents`` has every member's ``collaboratorId`` of
     the question as text once, each mapped to another member's id or
     ``None`` for a top member, with no cycle. Siren reads it as its parent
@@ -940,26 +1228,44 @@ class AppCollaboratorGroupTree(TypedDict):
     parents: Dict[str, Optional[int]]
 
 
-AppCollaboratorGroupStructureAnswer = Union[AppCollaboratorGroupChain, AppCollaboratorGroupTree]
+CollaboratorGroupStructureAnswer = Union[CollaboratorGroupStructureChainAnswer, CollaboratorGroupStructureTreeAnswer]
 """The answer to a ``collaboratorGroupStructure`` ask, a chain or a tree.
 Siren refuses one that breaks the rules with 422 ``app_answer_invalid``."""
 
 
-class AppPayoutQuestion(TypedDict):
-    """``payoutMethod`` (an ask): pay one payout. ``payout`` holds ``id``,
-    ``fulfillmentId`` and ``attempt``, which starts at 1 and rises when Siren
-    asks again about the same payout. ``amount`` is what to pay, a stored
-    whole number in the currency's smallest unit. ``collaborator`` holds
-    ``id``, ``name`` and ``email``, which is ``None`` when they have none.
-    Pay each payout id at most once, and when Siren asks again about a
-    payout the app already paid, answer ``paid`` with the first reference."""
+# payoutMethod, Siren's AppPayoutQuestion.
 
-    payout: Dict[str, int]
+
+class PayoutMethodPayout(TypedDict):
+    """The payout to pay: its ``id``, its fulfillment, and ``attempt``,
+    which starts at 1 and rises when Siren asks again about it."""
+
+    id: int
+    fulfillmentId: int
+    attempt: int
+
+
+class PayoutMethodCollaborator(TypedDict):
+    """Who to pay. ``email`` is ``None`` when they have none."""
+
+    id: int
+    name: str
+    email: Optional[str]
+
+
+class PayoutMethodQuestion(TypedDict):
+    """``payoutMethod`` (an ask): pay one payout (``AppPayoutQuestion``).
+    ``amount`` is what to pay, a stored whole number in the currency's
+    smallest unit. Pay each payout id at most once, and when Siren asks
+    again about a payout the app already paid, answer ``paid`` with the
+    first reference."""
+
+    payout: PayoutMethodPayout
     amount: AppAmount
-    collaborator: Dict[str, Any]
+    collaborator: PayoutMethodCollaborator
 
 
-class AppPayoutPaid(TypedDict):
+class PayoutMethodPaidAnswer(TypedDict):
     """The payout was paid. ``reference`` is the payment's id in the app's
     own system, 1 to 191 characters."""
 
@@ -967,7 +1273,7 @@ class AppPayoutPaid(TypedDict):
     reference: str
 
 
-class AppPayoutFailed(TypedDict):
+class PayoutMethodFailedAnswer(TypedDict):
     """The app couldn't pay. ``reason`` says why in plain words, 1 to 500
     characters, and Siren marks the payout failed."""
 
@@ -975,23 +1281,68 @@ class AppPayoutFailed(TypedDict):
     reason: str
 
 
-AppPayoutAnswer = Union[AppPayoutPaid, AppPayoutFailed]
+PayoutMethodAnswer = Union[PayoutMethodPaidAnswer, PayoutMethodFailedAnswer]
 """The answer to a ``payoutMethod`` ask: paid with a reference, or failed
 with a reason."""
 
 
-class AppConversionActionData(TypedDict):
-    """``postConversionAction`` (a tell): the conversion, its reward and
-    its program."""
+# Requests as Siren's request routes list them.
 
-    conversion: Dict[str, Any]
-    reward: AppAmount
-    program: Dict[str, Any]
+#: The statuses of a request Siren sent an app
+#: (lib/Apps/Core/Models/AppRequest.php). A tell ends at ``delivered``. An
+#: ask ends at ``applied``, once its answer has done its work.
+#: ``needs_attention`` waits for a person or a late answer. An ask that
+#: holds a reward ends at ``dropped`` when the app didn't answer within 24
+#: hours.
+APP_REQUEST_STATUSES: Tuple[str, ...] = (
+    "pending", "sent", "delivered", "answered", "applied", "needs_attention", "dropped",
+)
 
 
-class AppAllocationActionData(TypedDict):
-    """``postAllocationAction`` (a tell): the allocation and its
-    distributor."""
+class AppRequestSubject(TypedDict):
+    """What a request is about, such as ``{"type": "distribution", "id": "21"}``."""
 
-    allocation: Dict[str, Any]
-    distributor: Dict[str, Any]
+    type: str
+    id: str
+
+
+class AppRequestRecord(TypedDict, total=False):
+    """A request Siren sent an app, as ``GET /apps/requests`` lists it
+    (``AppRequestSerializer``). ``id`` is the request key, the same on every
+    send. ``feature`` is ``app:{id}`` of the feature Siren acted for.
+    ``answeredBy`` is ``app:{appId}`` or ``user:{userId}``. The data and the
+    answer stay out of the list."""
+
+    id: str
+    appId: int
+    feature: str
+    kind: str
+    mode: str
+    subject: AppRequestSubject
+    status: str
+    sendCount: int
+    answerBy: Optional[str]
+    applyLease: Optional[str]
+    answeredBy: Optional[str]
+    answeredAt: Optional[str]
+    lastError: Optional[str]
+    dropsAt: Optional[str]
+    createdAt: str
+
+
+class AppRequestUser(TypedDict):
+    """The person who answered a request by hand."""
+
+    id: int
+    email: str
+
+
+class AppRequestDetail(AppRequestRecord, total=False):
+    """One request as ``GET /apps/requests/{id}`` answers it
+    (``AppRequestSerializer::toDetail()``): the list's fields, the ``data``
+    Siren sent, the ``answer`` it took or ``None``, and ``answeredByUser``,
+    the person behind a ``user:{id}`` answer, or ``None``."""
+
+    data: Dict[str, Any]
+    answer: Optional[Dict[str, Any]]
+    answeredByUser: Optional[AppRequestUser]

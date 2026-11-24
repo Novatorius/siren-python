@@ -64,7 +64,7 @@ def answer_of(data: dict) -> dict:
 
 def test_the_kind_is_the_value_siren_stores_and_its_types_are_public():
     assert FeatureKind.INCENTIVE_TYPE == "incentiveType"
-    for name in ["AppIncentiveTypeQuestion", "AppIncentiveTypeEngagement", "AppIncentiveTypeAwardAnswer", "AppIncentiveTypeNoneAnswer", "AppIncentiveTypeAnswer"]:
+    for name in ["IncentiveTypeQuestion", "AppIncentiveTypeEngagement", "IncentiveTypeAwardAnswer", "IncentiveTypeNoneAnswer", "IncentiveTypeAnswer"]:
         assert name in siren.__all__
         assert getattr(siren, name) is not None
 

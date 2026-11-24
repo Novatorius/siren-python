@@ -46,5 +46,5 @@ def test_a_secret_passed_in_wins(monkeypatch):
 
 def test_no_secret_names_the_argument_and_the_variable(monkeypatch):
     monkeypatch.delenv("SIREN_SIGNING_SECRET", raising=False)
-    with pytest.raises(ValueError, match=r"signing_secret.*SIREN_SIGNING_SECRET"):
+    with pytest.raises(siren.AppHandlerError, match=r"signing_secret.*SIREN_SIGNING_SECRET"):
         siren.Siren(api_key="sk_test").apps.request_handler()

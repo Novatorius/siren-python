@@ -481,7 +481,7 @@ class TestStep1TheAnswerIsChecked:
 
         assert not route.called
         error, subject = errors.seen[0]
-        assert isinstance(error, ValueError) and words in str(error)
+        assert isinstance(error, siren.AppHandlerError) and words in str(error)
         assert subject.id == REQUEST_ID
 
 
@@ -652,7 +652,7 @@ class TestOptions:
         ],
     )
     def test_bad_options_are_refused(self, app_client, args, kwargs):
-        with pytest.raises(ValueError):
+        with pytest.raises(siren.AppHandlerError):
             app_client.apps.request_handler(*args, **kwargs)
 
 
@@ -694,18 +694,18 @@ class TestRegistration:
         ],
     )
     def test_on_refuses_a_bad_kind_key_or_function(self, app_client, errors, args):
-        with pytest.raises(ValueError):
+        with pytest.raises(siren.AppHandlerError):
             handler(app_client, errors).on(*args)
 
     def test_a_second_function_for_the_same_kind_and_key_is_refused(self, app_client, errors):
         answers = handler(app_client, errors).on("postConversionAction", "tell-the-crm", lambda r: None)
 
-        with pytest.raises(ValueError, match="already has a function"):
+        with pytest.raises(siren.AppHandlerError, match="already has a function"):
             answers.on("postConversionAction", "tell-the-crm", lambda r: None)
 
     @pytest.mark.parametrize("event", ["", "app.request"])
     def test_on_event_refuses_an_empty_type_and_app_request(self, app_client, errors, event):
-        with pytest.raises(ValueError):
+        with pytest.raises(siren.AppHandlerError):
             handler(app_client, errors).on_event(event, lambda e: None)
 
 

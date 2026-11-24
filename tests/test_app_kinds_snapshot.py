@@ -71,7 +71,7 @@ def test_each_member_has_docs_that_carry_its_name_and_a_term_that_differs():
     module = generator()
     assert module.generated_block(shipped()) in source, "Run python scripts/feature_kinds.py to bring FeatureKind's docs up to the snapshot."
     block = module.generated_block(shipped())
-    assert 'INCENTIVE_RESOLVER = "incentiveResolver"\n    """Attribution model. Siren\'s own term is incentive resolver.' in block
+    assert 'INCENTIVE_RESOLVER = "incentiveResolver"\n    """Attribution model. Siren\'s code calls it the incentive resolver.' in block
     assert 'PAYOUT_METHOD = "payoutMethod"\n    """Payout method. Siren asks' in block
 
 
@@ -84,6 +84,6 @@ def test_each_member_has_docs_that_carry_its_name_and_a_term_that_differs():
     ],
 )
 def test_the_screen_name_message_reads_names_from_the_snapshot(kind, words):
-    with pytest.raises(ValueError) as refused:
+    with pytest.raises(siren.AppHandlerError) as refused:
         siren.Siren(api_key="sk_test").apps.request_handler("cd" * 32).on(kind, "my-feature", lambda request: None)
     assert str(refused.value) == words

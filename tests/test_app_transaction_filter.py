@@ -23,8 +23,8 @@ import siren
 from siren import (
     FeatureKind,
     AppRequest,
-    AppTransactionFilterAnswer,
-    AppTransactionFilterQuestion,
+    TransactionFilterAnswer,
+    TransactionFilterQuestion,
 )
 
 from .conftest import API_KEY
@@ -35,7 +35,7 @@ CONTRACTS = json.loads((Path(__file__).parent / "fixtures" / "apps-feature-contr
 API_BASE = CONTRACTS["apiBase"]
 REQUEST_ID = "apr_b79943ff8ca353ce5cf5312bb3fa66c7"
 
-QUESTION: AppTransactionFilterQuestion = {
+QUESTION: TransactionFilterQuestion = {
     "for": {"type": "program", "id": 3, "name": "Partner program"},
     "transaction": CONTRACTS["kinds"]["incentiveResolver"]["request"]["data"]["transaction"],
     "lines": [
@@ -46,15 +46,15 @@ QUESTION: AppTransactionFilterQuestion = {
     "refundDistribution": None,
 }
 
-DISTRIBUTOR_QUESTION: AppTransactionFilterQuestion = {
+DISTRIBUTOR_QUESTION: TransactionFilterQuestion = {
     **QUESTION,
     "for": {"type": "distributor", "id": 2, "name": "Partner leaderboard"},
     "distribution": {"id": 21},
     "refundDistribution": {"id": 22},
 }
 
-LINE_ITEMS: AppTransactionFilterAnswer = {"outcome": "filtered", "include": [5501]}
-NOTHING: AppTransactionFilterAnswer = {"outcome": "filtered", "include": []}
+LINE_ITEMS: TransactionFilterAnswer = {"outcome": "filtered", "include": [5501]}
+NOTHING: TransactionFilterAnswer = {"outcome": "filtered", "include": []}
 
 # The README's handler sample, word for word.
 README_SAMPLE = textwrap.dedent(
@@ -89,7 +89,7 @@ def sign(body: str) -> Dict[str, str]:
 def test_the_kind_is_named_with_the_value_siren_stores():
     assert FeatureKind.TRANSACTION_FILTER == "transactionFilter"
     assert "transactionFilter" in [kind.value for kind in FeatureKind]
-    assert siren.AppTransactionFilterAnswer is AppTransactionFilterAnswer
+    assert siren.TransactionFilterAnswer is TransactionFilterAnswer
 
 
 def test_the_readme_carries_the_sample_word_for_word():
@@ -101,7 +101,7 @@ def test_the_handler_posts_the_lines_each_function_returns():
 
     seen: List[BaseException] = []
 
-    def nothing_late(request: AppRequest) -> AppTransactionFilterAnswer:
+    def nothing_late(request: AppRequest) -> TransactionFilterAnswer:
         late = request.data["distribution"] is not None and request.data["refundDistribution"] is not None
         return {"outcome": "filtered", "include": [] if late else [line["id"] for line in request.data["lines"]]}
 

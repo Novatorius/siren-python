@@ -4,7 +4,7 @@ of each shape, which the SDK's own checks let through unchanged."""
 from __future__ import annotations
 
 import json
-from typing import List, Literal, Optional, get_type_hints
+from typing import List, Literal, Optional, get_args, get_type_hints
 
 import pytest
 
@@ -69,18 +69,18 @@ def test_the_metric_types_are_exported():
     for name in (
         "AppMetricCause",
         "AppMetricSale",
-        "AppMetricCalculationQuestion",
-        "AppMetricCalculationAnswer",
-        "AppMetricFilterQuestion",
-        "AppMetricFilterAnswer",
+        "MetricCalculationQuestion",
+        "MetricCalculationAnswer",
+        "MetricFilterQuestion",
+        "MetricFilterAnswer",
     ):
         assert name in siren.__all__, name
         assert getattr(siren, name) is getattr(siren.types, name)
 
 
 def test_the_calculation_question_has_the_keys_siren_sends():
-    # Siren's AppMetricQuestion::forCalculation(), and Node's AppMetricCalculationQuestion.
-    keys = set(siren.AppMetricCalculationQuestion.__annotations__)
+    # Siren's AppMetricQuestion::forCalculation(), and Node's MetricCalculationQuestion.
+    keys = set(siren.MetricCalculationQuestion.__annotations__)
     assert keys == {
         "distributor",
         "distribution",
@@ -96,8 +96,8 @@ def test_the_calculation_question_has_the_keys_siren_sends():
 
 
 def test_the_filter_question_has_the_keys_siren_sends():
-    # Siren's AppMetricQuestion::forFilter(), and Node's AppMetricFilterQuestion.
-    keys = set(siren.AppMetricFilterQuestion.__annotations__)
+    # Siren's AppMetricQuestion::forFilter(), and Node's MetricFilterQuestion.
+    keys = set(siren.MetricFilterQuestion.__annotations__)
     assert keys == {"distributor", "distribution", "collaborator", "metricType", "opportunityId", "points", "cause", "sale"}
     assert keys == set(_data("metricFilter"))
 
@@ -109,7 +109,7 @@ def test_the_cause_and_the_sale_have_the_keys_siren_sends():
     sale = get_type_hints(siren.AppMetricSale)
     assert sale == {"transactionId": int, "conversionId": Optional[int], "excludedLineIds": List[int]}
     assert set(sale) == set(_data("metricFilter")["sale"])
-    question = get_type_hints(siren.AppMetricFilterQuestion)
+    question = get_type_hints(siren.MetricFilterQuestion)
     assert question["cause"] is siren.AppMetricCause
     assert question["sale"] == Optional[siren.AppMetricSale]
     assert question["opportunityId"] == Optional[int]
@@ -117,6 +117,6 @@ def test_the_cause_and_the_sale_have_the_keys_siren_sends():
 
 
 def test_the_answers_have_the_keys_siren_reads():
-    assert set(siren.AppMetricCalculationAnswer.__annotations__) == set(CONTRACTS["kinds"]["metricCalculation"]["answer"])
-    assert get_type_hints(siren.AppMetricCalculationAnswer)["outcome"] == Literal["scores"]
-    assert set(siren.AppMetricFilterAnswer.__annotations__) == {"outcome", "reason"}
+    assert set(siren.MetricCalculationAnswer.__annotations__) == set(CONTRACTS["kinds"]["metricCalculation"]["answer"])
+    assert get_type_hints(siren.MetricCalculationAnswer)["outcome"] == Literal["scores"]
+    assert [set(variant.__annotations__) for variant in get_args(siren.MetricFilterAnswer)] == [{"outcome"}, {"outcome", "reason"}]

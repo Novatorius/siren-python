@@ -229,6 +229,15 @@ class SignatureVerificationError(SirenError):
     """Webhook signature verification failed (no HTTP status)."""
 
 
+class AppHandlerError(SirenError):
+    """A mistake in the app's own code that the request handler found, so
+    one ``except`` covers them all: a kind Siren never sends, an empty key,
+    a second function for one kind and key, an option it can't use, an ask's
+    function that returned nothing or an answer it can't post, and a bad
+    argument to ``simulate()``. The Node and PHP SDKs raise their own
+    ``AppHandlerError`` for the same mistakes. It carries no HTTP status."""
+
+
 _STATUS_TO_ERROR = {
     400: BadRequestError,
     401: AuthenticationError,

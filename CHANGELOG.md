@@ -9,6 +9,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
+- Each kind's types are named for the kind, with no `App` prefix and no old
+  name kept: `<Kind>Question` and `<Kind>Answer` for an ask, `<Kind>Tell`
+  for a tell, and the variant before the suffix, as in
+  `PayoutMethodPaidAnswer`. `AppConversionActionData` is now
+  `PostConversionActionTell`, `AppDistributionQuestion` is
+  `DistributionResolverQuestion`, `AppRewardQuestion` is
+  `IncentiveResolverQuestion`, `AppGroupOrderQuestion` is
+  `ProgramGroupSorterQuestion`, `AppCollaboratorGroupChain` is
+  `CollaboratorGroupStructureChainAnswer`, `AppPayoutPaid` is
+  `PayoutMethodPaidAnswer`, and so on for every kind. Node and PHP use the
+  same names.
+- `AppRequest` is generic. The handler and `apps.verify_request()` return an
+  `AppAsk[Q]` or an `AppTell[D]`, and `on()` has a generated overload for
+  each kind, so mypy checks a decorated function's `request.data` and its
+  answer against the kind. Every fixed `outcome` and `reason` is a
+  `Literal`, every fixed-shape `Dict[str, Any]` is a `TypedDict` read from
+  Siren's question builders, and a metric's or engagement's `score` is an
+  `int`. `answers.later()` returns the new `siren.AppAnswerLater`, and
+  `siren.AppAskResult[A]` types an ask's return.
+- A post-conversion action's `reward` and a transaction filter's
+  transaction `currency` may be `None`, as Siren sends them.
+- An engagement type's `args` reads as `{}` when Siren sends `[]`, for an
+  engagement calculation and a collaborator group structure. `raw` keeps the
+  body as sent.
+- The handler raises the new `siren.AppHandlerError`, a `SirenError`, for
+  a mistake in the app's code, where it raised `ValueError` or `TypeError`:
+  an unknown or empty kind, an empty key, a function that is not callable, a
+  second function for one kind and key, a bad handler option, and a bad
+  argument to `simulate()`. A function that returns nothing and an answer the
+  handler won't post reach `on_error` and `simulate()`'s `error` as an
+  `AppHandlerError` too. The messages are unchanged. The resource methods
+  still raise `ValueError` for a bad argument.
+- The default `on_error` line ends "Resend it sooner with `siren apps resend
+  <id>`." Siren's API resends a pending ask, and Siren Cloud offers Send
+  again only once a request needs attention.
+
 - Code written against the apps branch before this entry says "feature"
   where it said "item", as the docs, Siren Cloud's screens and Siren's
   renamed envelope and routes do. `siren.FeatureKind` replaces
@@ -41,6 +77,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `client.apps.requests.list(status=...)`, `retrieve(id)` and `resend(id)`,
+  for `GET /apps/requests`, `GET /apps/requests/{id}` and
+  `POST /apps/requests/{id}/resend`, with `siren.APP_REQUEST_STATUSES`,
+  `siren.AppRequestRecord` and `siren.AppRequestDetail`, as in the Node SDK.
+- A test runs `mypy --strict` on small files that use the SDK and on Siren's
+  request fixture, and `mypy` joins the `dev` extra.
+
 - `client.apps.features`: `create()`, `retrieve()`, `update()` and
   `delete()` on `/apps/{app}/features`, with a dashboard session. `delete()`
   returns `{"archived", "feature"}`. `siren.AppFeature`,
@@ -70,12 +113,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   api.sirenaffiliates.com and app.sirenaffiliates.com, count as one Siren.
   The answer still only goes to the client's own address.
 
-- Types for the three kinds that had none: `AppMetricCalculationQuestion`
-  and `AppMetricCalculationAnswer` for the metric calculation
-  (`metricCalculation`), `AppMetricFilterQuestion` and `AppMetricFilterAnswer`
+- Types for the three kinds that had none: `MetricCalculationQuestion`
+  and `MetricCalculationAnswer` for the metric calculation
+  (`metricCalculation`), `MetricFilterQuestion` and `MetricFilterAnswer`
   for the customer filter for distributors (`metricFilter`), with
-  `AppMetricCause` and `AppMetricSale`, and `AppPayoutQuestion`,
-  `AppPayoutPaid`, `AppPayoutFailed` and `AppPayoutAnswer` for the payout
+  `AppMetricCause` and `AppMetricSale`, and `PayoutMethodQuestion`,
+  `PayoutMethodPaidAnswer`, `PayoutMethodFailedAnswer` and `PayoutMethodAnswer` for the payout
   method (`payoutMethod`). Each matches the Node SDK's type of the same name
   and the question Siren builds.
 - `events.ingest()` sends an app's custom event with a short-lived app
@@ -97,8 +140,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   program or a distributor picks to let the app say which of a sale's own
   lines count. Siren's catalog calls it a transaction compiler. Siren asks it
   once per sale for each program or distributor that picks it, and a refund
-  reuses the stored answer. The types `AppTransactionFilterQuestion`,
-  `AppTransaction`, `AppTransactionLine` and `AppTransactionFilterAnswer`
+  reuses the stored answer. The types `TransactionFilterQuestion`,
+  `AppTransaction`, `AppTransactionLine` and `TransactionFilterAnswer`
   describe the question and its answer, the ids of the lines to include.
   Siren refuses a line id the question lacks with 422 `app_answer_invalid`.
   The README shows the question and a handler that counts only `lineItem`
@@ -106,11 +149,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `FeatureKind.COLLABORATOR_GROUP_STRUCTURE` (`collaboratorGroupStructure`),
   the feature kind a collaborator group picks to let the app give the group's
   shape. Siren asks it once per cascade trigger on the group, for a program
-  or a distributor. The types `AppCollaboratorGroupStructureQuestion`,
-  `AppCollaboratorGroupStructureDistributorQuestion`,
-  `AppCollaboratorGroupStructureProgramQuestion`,
-  `AppCollaboratorGroupMember`, `AppCollaboratorGroupChain`,
-  `AppCollaboratorGroupTree` and `AppCollaboratorGroupStructureAnswer`
+  or a distributor. The types `CollaboratorGroupStructureQuestion`,
+  `CollaboratorGroupStructureDistributorQuestion`,
+  `CollaboratorGroupStructureProgramQuestion`,
+  `AppCollaboratorGroupMember`, `CollaboratorGroupStructureChainAnswer`,
+  `CollaboratorGroupStructureTreeAnswer` and `CollaboratorGroupStructureAnswer`
   describe the question and its answer, a chain or a tree. Each member
   carries its `status` at the trigger, which Siren credits it by. Siren
   refuses an answer that leaves out or repeats a member, names one outside the group, or
@@ -138,29 +181,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `FeatureKind.INCENTIVE_TYPE` (`incentiveType`), the kind a program picks as
   its incentive type to let the app decide which engagements each sale, lead
   or renewal converts and the pool the program's resolver divides, with the
-  types `AppIncentiveTypeQuestion`, `AppIncentiveTypeEngagement`,
-  `AppIncentiveTypeAwardAnswer`, `AppIncentiveTypeNoneAnswer` and
-  `AppIncentiveTypeAnswer`, `{"outcome": "award", "units": ..., "pool": ...,
+  types `IncentiveTypeQuestion`, `AppIncentiveTypeEngagement`,
+  `IncentiveTypeAwardAnswer`, `IncentiveTypeNoneAnswer` and
+  `IncentiveTypeAnswer`, `{"outcome": "award", "units": ..., "pool": ...,
   "engagementIds": [...]}` or `{"outcome": "none"}`. The README shows the
   handler's sample for it.
 - `FeatureKind.ENGAGEMENT_CALCULATION` (`engagementCalculation`) and
   `FeatureKind.ENGAGEMENT_FILTER` (`engagementFilter`), the kinds a program's
   engagement type and a program pick to let the app decide who earns each
   engagement and whether it is made, with the types
-  `AppEngagementCalculationQuestion`, `AppEngagementCalculationAnswer`,
-  `AppEngagementFilterQuestion`, `AppEngagementFilterAnswer` and
+  `EngagementCalculationQuestion`, `EngagementCalculationAnswer`,
+  `EngagementFilterQuestion`, `EngagementFilterAnswer` and
   `AppEngagementCause`. The README shows the answer each takes.
 - `FeatureKind.PROGRAM_GROUP_SORTER` (`programGroupSorter`), the kind a
   program group picks as its structure to let the app order its programs for
-  each sale or lead, with the types `AppGroupOrderQuestion`,
-  `AppGroupOrderProgram`, `AppGroupOrderEngagement` and `AppGroupOrderAnswer`,
+  each sale or lead, with the types `ProgramGroupSorterQuestion`,
+  `ProgramGroupSorterProgram`, `ProgramGroupSorterEngagement` and `ProgramGroupSorterAnswer`,
   `{"outcome": "sorted", "programIds": [...]}`. The README shows the
   handler's sample for it.
-- Types for each feature kind's question and answer: `AppDistributionQuestion`,
-  `AppDistributionAnswer`, `AppRewardQuestion`, `AppRewardAnswer`,
-  `AppConversionActionData`, `AppAllocationActionData`, and the `AppCurrency`,
+- Types for each feature kind's question and answer: `DistributionResolverQuestion`,
+  `DistributionResolverAnswer`, `IncentiveResolverQuestion`, `IncentiveResolverAnswer`,
+  `PostConversionActionTell`, `PostAllocationActionTell`, and the `AppCurrency`,
   `AppAmount`, `AppDistributionPool`, `AppDistributionMetric` and
-  `AppRewardConversion` they hold.
+  `IncentiveResolverConversion` they hold.
 - `FeatureKind` names the kinds of feature an app can add, as an app
   request's `feature["kind"]` carries them, among them the new
   `METRIC_CALCULATION` (`metricCalculation`), `METRIC_FILTER` (`metricFilter`)

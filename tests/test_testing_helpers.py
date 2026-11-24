@@ -178,7 +178,7 @@ def test_simulate_returns_an_answer_the_handler_would_not_post():
     result = answers.simulate(testing.app_request("metricFilter", "refund-check", secret=SECRET))
 
     assert result.answer is None
-    assert isinstance(result.error, ValueError) and "outcome" in str(result.error)
+    assert isinstance(result.error, siren.AppHandlerError) and "outcome" in str(result.error)
 
 
 def test_a_refused_request_has_no_error_in_the_result():
@@ -191,5 +191,5 @@ def test_a_refused_request_has_no_error_in_the_result():
 def test_simulate_still_raises_for_something_that_is_not_a_request(bad):
     answers = siren.Siren(api_key="sk_test").apps.request_handler(SECRET)
 
-    with pytest.raises(TypeError, match="siren.testing.app_request"):
+    with pytest.raises(siren.AppHandlerError, match="siren.testing.app_request"):
         answers.simulate(bad)

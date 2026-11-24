@@ -62,6 +62,7 @@ from typing import (
     Iterable,
     Iterator,
     List,
+    Literal,
     Mapping,
     MutableMapping,
     Optional,
@@ -73,14 +74,46 @@ from typing import (
 
 from .apps import REQUEST_EVENT, Apps, _BodyRefused, _check_signature, _check_tolerance, _checked_answer, _header
 from ._answer_checks import siren_refusal
-from .errors import ConflictError, ErrorCode, SignatureVerificationError, SirenError, ValidationError
-from .types import APP_KINDS, APP_REQUEST_KINDS, AppRequest, WebhookEvent
+from .errors import AppHandlerError, ConflictError, ErrorCode, SignatureVerificationError, SirenError, ValidationError
+from .types import (
+    APP_KINDS,
+    APP_REQUEST_KINDS,
+    AppAsk,
+    AppRequest,
+    AppTell,
+    CollaboratorGroupStructureAnswer,
+    CollaboratorGroupStructureQuestion,
+    DistributionResolverAnswer,
+    DistributionResolverQuestion,
+    EngagementCalculationAnswer,
+    EngagementCalculationQuestion,
+    EngagementFilterAnswer,
+    EngagementFilterQuestion,
+    FeatureKind,
+    IncentiveResolverAnswer,
+    IncentiveResolverQuestion,
+    IncentiveTypeAnswer,
+    IncentiveTypeQuestion,
+    MetricCalculationAnswer,
+    MetricCalculationQuestion,
+    MetricFilterAnswer,
+    MetricFilterQuestion,
+    PayoutMethodAnswer,
+    PayoutMethodQuestion,
+    PostAllocationActionTell,
+    PostConversionActionTell,
+    ProgramGroupSorterAnswer,
+    ProgramGroupSorterQuestion,
+    TransactionFilterAnswer,
+    TransactionFilterQuestion,
+    WebhookEvent,
+)
 from .webhooks import _is_envelope as _is_webhook_envelope
 
 if TYPE_CHECKING:  # pragma: no cover
     from .apps import AppRequests
 
-__all__ = ["AppRequestHandler", "AppRequestReply", "AppSimulation", "MAX_BODY_BYTES"]
+__all__ = ["AppAnswerLater", "AppAskResult", "AppRequestHandler", "AppRequestReply", "AppSimulation", "MAX_BODY_BYTES"]
 
 #: The longest body the handler reads, 1 MiB, as in the Node SDK. Siren's
 #: requests are far smaller, since an answer alone stays under 16 KB.
@@ -140,7 +173,7 @@ class AppSimulation:
     ``answer`` is ``None`` when nothing would be posted. ``error`` is
     ``None`` when nothing failed. It holds what the function raised, the
     error for an ask's function that returned ``None``, the
-    :class:`ValueError` for an answer the handler would not post, or a
+    :class:`~siren.AppHandlerError` for an answer the handler would not post, or a
     :class:`~siren.ValidationError` with code ``app_answer_invalid`` and
     Siren's own words for an answer Siren would refuse."""
 
@@ -150,12 +183,15 @@ class AppSimulation:
     error: Optional[BaseException] = None
 
 
-class _AnswerLater:
-    """What :meth:`AppRequestHandler.later` returns."""
+class AppAnswerLater:
+    """What :meth:`AppRequestHandler.later` returns, the one value of this
+    type: an ask's function returns it when the app will answer by itself
+    with ``apps.requests.answer()``. Annotate such a function's return as
+    ``Union[DistributionResolverAnswer, AppAnswerLater]``."""
 
-    _instance: Optional["_AnswerLater"] = None
+    _instance: Optional["AppAnswerLater"] = None
 
-    def __new__(cls) -> "_AnswerLater":
+    def __new__(cls) -> "AppAnswerLater":
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
@@ -164,7 +200,29 @@ class _AnswerLater:
         return "answers.later()"
 
 
-_LATER = _AnswerLater()
+_LATER = AppAnswerLater()
+
+_A = TypeVar("_A")
+
+#: What an ask's function returns: the answer, or :meth:`AppRequestHandler.later`,
+#: now or from an ``async def``. ``AppAskResult[DistributionResolverAnswer]``.
+AppAskResult = Union[_A, AppAnswerLater, Awaitable[Union[_A, AppAnswerLater]]]
+
+# Generated function types, from app_kinds.json by scripts/feature_kinds.py. Do not edit.
+_PostConversionActionFn = TypeVar("_PostConversionActionFn", bound="Callable[[AppTell[PostConversionActionTell]], object]")
+_PostAllocationActionFn = TypeVar("_PostAllocationActionFn", bound="Callable[[AppTell[PostAllocationActionTell]], object]")
+_PayoutMethodFn = TypeVar("_PayoutMethodFn", bound="Callable[[AppAsk[PayoutMethodQuestion]], AppAskResult[PayoutMethodAnswer]]")
+_DistributionResolverFn = TypeVar("_DistributionResolverFn", bound="Callable[[AppAsk[DistributionResolverQuestion]], AppAskResult[DistributionResolverAnswer]]")
+_MetricCalculationFn = TypeVar("_MetricCalculationFn", bound="Callable[[AppAsk[MetricCalculationQuestion]], AppAskResult[MetricCalculationAnswer]]")
+_MetricFilterFn = TypeVar("_MetricFilterFn", bound="Callable[[AppAsk[MetricFilterQuestion]], AppAskResult[MetricFilterAnswer]]")
+_IncentiveResolverFn = TypeVar("_IncentiveResolverFn", bound="Callable[[AppAsk[IncentiveResolverQuestion]], AppAskResult[IncentiveResolverAnswer]]")
+_TransactionFilterFn = TypeVar("_TransactionFilterFn", bound="Callable[[AppAsk[TransactionFilterQuestion]], AppAskResult[TransactionFilterAnswer]]")
+_IncentiveTypeFn = TypeVar("_IncentiveTypeFn", bound="Callable[[AppAsk[IncentiveTypeQuestion]], AppAskResult[IncentiveTypeAnswer]]")
+_EngagementCalculationFn = TypeVar("_EngagementCalculationFn", bound="Callable[[AppAsk[EngagementCalculationQuestion]], AppAskResult[EngagementCalculationAnswer]]")
+_EngagementFilterFn = TypeVar("_EngagementFilterFn", bound="Callable[[AppAsk[EngagementFilterQuestion]], AppAskResult[EngagementFilterAnswer]]")
+_ProgramGroupSorterFn = TypeVar("_ProgramGroupSorterFn", bound="Callable[[AppAsk[ProgramGroupSorterQuestion]], AppAskResult[ProgramGroupSorterAnswer]]")
+_CollaboratorGroupStructureFn = TypeVar("_CollaboratorGroupStructureFn", bound="Callable[[AppAsk[CollaboratorGroupStructureQuestion]], AppAskResult[CollaboratorGroupStructureAnswer]]")
+# End of the generated function types.
 
 
 # The kinds on() takes ---------------------------------------------------------
@@ -222,14 +280,14 @@ def _extra_kinds(method: str, extra_kinds: Any) -> Tuple[str, ...]:
         return ()
     words = f"{method} takes extra_kinds as a list of kind names a newer Siren sends, such as ['refundPolicy']."
     if isinstance(extra_kinds, (str, bytes)):
-        raise ValueError(words)
+        raise AppHandlerError(words)
     try:
         kinds = tuple(extra_kinds)
     except TypeError:
-        raise ValueError(words) from None
+        raise AppHandlerError(words) from None
     for kind in kinds:
         if not isinstance(kind, str) or kind == "" or "." in kind:
-            raise ValueError(words)
+            raise AppHandlerError(words)
     return kinds
 
 
@@ -265,8 +323,8 @@ def _next_send(error: BaseException, request: AppRequest, mode: str) -> str:
     closes = _window_close(request.answer_by)
     when = f"after {closes}, when" if closes is not None else "when"
     return (
-        f"Siren sends it again {when} its answer window closes. Resend it sooner from Needs attention "
-        f"in Siren Cloud, or with `siren apps resend {request.id}`."
+        f"Siren sends it again {when} its answer window closes. "
+        f"Resend it sooner with `siren apps resend {request.id}`."
     )
 
 
@@ -353,14 +411,17 @@ class AppRequestHandler:
     ) -> None:
         method = "apps.request_handler()"
         if not isinstance(signing_secret, str) or signing_secret == "":
-            raise ValueError(f"{method} needs the app's signing secret, which Siren showed when it made the app.")
+            raise AppHandlerError(f"{method} needs the app's signing secret, which Siren showed when it made the app.")
         if run_later is not None and not callable(run_later):
-            raise ValueError(f"{method} takes run_later as a function that is handed the work, such as a queue's add.")
+            raise AppHandlerError(f"{method} takes run_later as a function that is handed the work, such as a queue's add.")
         if on_error is not None and not callable(on_error):
-            raise ValueError(f"{method} takes on_error as a function of (error, request).")
+            raise AppHandlerError(f"{method} takes on_error as a function of (error, request).")
         self._requests = requests
         self._secret = signing_secret
-        self._tolerance = _check_tolerance(method, tolerance_seconds)
+        try:
+            self._tolerance = _check_tolerance(method, tolerance_seconds)
+        except ValueError as error:
+            raise AppHandlerError(str(error)) from None
         self._run_later = run_later
         self._on_error = on_error
         self._extra_kinds = _extra_kinds(method, extra_kinds)
@@ -373,6 +434,125 @@ class AppRequestHandler:
 
     # Registration ----------------------------------------------------------
 
+    # Generated from app_kinds.json by scripts/feature_kinds.py. Do not edit.
+    @overload
+    def on(self, kind: Literal["postConversionAction", FeatureKind.POST_CONVERSION_ACTION], key: str, fn: Callable[[AppTell[PostConversionActionTell]], object]) -> "AppRequestHandler": ...
+
+    @overload
+    def on(self, kind: Literal["postConversionAction", FeatureKind.POST_CONVERSION_ACTION], key: Callable[[AppTell[PostConversionActionTell]], object]) -> "AppRequestHandler": ...
+
+    @overload
+    def on(self, kind: Literal["postConversionAction", FeatureKind.POST_CONVERSION_ACTION], key: Optional[str] = None) -> Callable[[_PostConversionActionFn], _PostConversionActionFn]: ...
+
+    @overload
+    def on(self, kind: Literal["postAllocationAction", FeatureKind.POST_ALLOCATION_ACTION], key: str, fn: Callable[[AppTell[PostAllocationActionTell]], object]) -> "AppRequestHandler": ...
+
+    @overload
+    def on(self, kind: Literal["postAllocationAction", FeatureKind.POST_ALLOCATION_ACTION], key: Callable[[AppTell[PostAllocationActionTell]], object]) -> "AppRequestHandler": ...
+
+    @overload
+    def on(self, kind: Literal["postAllocationAction", FeatureKind.POST_ALLOCATION_ACTION], key: Optional[str] = None) -> Callable[[_PostAllocationActionFn], _PostAllocationActionFn]: ...
+
+    @overload
+    def on(self, kind: Literal["payoutMethod", FeatureKind.PAYOUT_METHOD], key: str, fn: Callable[[AppAsk[PayoutMethodQuestion]], AppAskResult[PayoutMethodAnswer]]) -> "AppRequestHandler": ...
+
+    @overload
+    def on(self, kind: Literal["payoutMethod", FeatureKind.PAYOUT_METHOD], key: Callable[[AppAsk[PayoutMethodQuestion]], AppAskResult[PayoutMethodAnswer]]) -> "AppRequestHandler": ...
+
+    @overload
+    def on(self, kind: Literal["payoutMethod", FeatureKind.PAYOUT_METHOD], key: Optional[str] = None) -> Callable[[_PayoutMethodFn], _PayoutMethodFn]: ...
+
+    @overload
+    def on(self, kind: Literal["distributionResolver", FeatureKind.DISTRIBUTION_RESOLVER], key: str, fn: Callable[[AppAsk[DistributionResolverQuestion]], AppAskResult[DistributionResolverAnswer]]) -> "AppRequestHandler": ...
+
+    @overload
+    def on(self, kind: Literal["distributionResolver", FeatureKind.DISTRIBUTION_RESOLVER], key: Callable[[AppAsk[DistributionResolverQuestion]], AppAskResult[DistributionResolverAnswer]]) -> "AppRequestHandler": ...
+
+    @overload
+    def on(self, kind: Literal["distributionResolver", FeatureKind.DISTRIBUTION_RESOLVER], key: Optional[str] = None) -> Callable[[_DistributionResolverFn], _DistributionResolverFn]: ...
+
+    @overload
+    def on(self, kind: Literal["metricCalculation", FeatureKind.METRIC_CALCULATION], key: str, fn: Callable[[AppAsk[MetricCalculationQuestion]], AppAskResult[MetricCalculationAnswer]]) -> "AppRequestHandler": ...
+
+    @overload
+    def on(self, kind: Literal["metricCalculation", FeatureKind.METRIC_CALCULATION], key: Callable[[AppAsk[MetricCalculationQuestion]], AppAskResult[MetricCalculationAnswer]]) -> "AppRequestHandler": ...
+
+    @overload
+    def on(self, kind: Literal["metricCalculation", FeatureKind.METRIC_CALCULATION], key: Optional[str] = None) -> Callable[[_MetricCalculationFn], _MetricCalculationFn]: ...
+
+    @overload
+    def on(self, kind: Literal["metricFilter", FeatureKind.METRIC_FILTER], key: str, fn: Callable[[AppAsk[MetricFilterQuestion]], AppAskResult[MetricFilterAnswer]]) -> "AppRequestHandler": ...
+
+    @overload
+    def on(self, kind: Literal["metricFilter", FeatureKind.METRIC_FILTER], key: Callable[[AppAsk[MetricFilterQuestion]], AppAskResult[MetricFilterAnswer]]) -> "AppRequestHandler": ...
+
+    @overload
+    def on(self, kind: Literal["metricFilter", FeatureKind.METRIC_FILTER], key: Optional[str] = None) -> Callable[[_MetricFilterFn], _MetricFilterFn]: ...
+
+    @overload
+    def on(self, kind: Literal["incentiveResolver", FeatureKind.INCENTIVE_RESOLVER], key: str, fn: Callable[[AppAsk[IncentiveResolverQuestion]], AppAskResult[IncentiveResolverAnswer]]) -> "AppRequestHandler": ...
+
+    @overload
+    def on(self, kind: Literal["incentiveResolver", FeatureKind.INCENTIVE_RESOLVER], key: Callable[[AppAsk[IncentiveResolverQuestion]], AppAskResult[IncentiveResolverAnswer]]) -> "AppRequestHandler": ...
+
+    @overload
+    def on(self, kind: Literal["incentiveResolver", FeatureKind.INCENTIVE_RESOLVER], key: Optional[str] = None) -> Callable[[_IncentiveResolverFn], _IncentiveResolverFn]: ...
+
+    @overload
+    def on(self, kind: Literal["transactionFilter", FeatureKind.TRANSACTION_FILTER], key: str, fn: Callable[[AppAsk[TransactionFilterQuestion]], AppAskResult[TransactionFilterAnswer]]) -> "AppRequestHandler": ...
+
+    @overload
+    def on(self, kind: Literal["transactionFilter", FeatureKind.TRANSACTION_FILTER], key: Callable[[AppAsk[TransactionFilterQuestion]], AppAskResult[TransactionFilterAnswer]]) -> "AppRequestHandler": ...
+
+    @overload
+    def on(self, kind: Literal["transactionFilter", FeatureKind.TRANSACTION_FILTER], key: Optional[str] = None) -> Callable[[_TransactionFilterFn], _TransactionFilterFn]: ...
+
+    @overload
+    def on(self, kind: Literal["incentiveType", FeatureKind.INCENTIVE_TYPE], key: str, fn: Callable[[AppAsk[IncentiveTypeQuestion]], AppAskResult[IncentiveTypeAnswer]]) -> "AppRequestHandler": ...
+
+    @overload
+    def on(self, kind: Literal["incentiveType", FeatureKind.INCENTIVE_TYPE], key: Callable[[AppAsk[IncentiveTypeQuestion]], AppAskResult[IncentiveTypeAnswer]]) -> "AppRequestHandler": ...
+
+    @overload
+    def on(self, kind: Literal["incentiveType", FeatureKind.INCENTIVE_TYPE], key: Optional[str] = None) -> Callable[[_IncentiveTypeFn], _IncentiveTypeFn]: ...
+
+    @overload
+    def on(self, kind: Literal["engagementCalculation", FeatureKind.ENGAGEMENT_CALCULATION], key: str, fn: Callable[[AppAsk[EngagementCalculationQuestion]], AppAskResult[EngagementCalculationAnswer]]) -> "AppRequestHandler": ...
+
+    @overload
+    def on(self, kind: Literal["engagementCalculation", FeatureKind.ENGAGEMENT_CALCULATION], key: Callable[[AppAsk[EngagementCalculationQuestion]], AppAskResult[EngagementCalculationAnswer]]) -> "AppRequestHandler": ...
+
+    @overload
+    def on(self, kind: Literal["engagementCalculation", FeatureKind.ENGAGEMENT_CALCULATION], key: Optional[str] = None) -> Callable[[_EngagementCalculationFn], _EngagementCalculationFn]: ...
+
+    @overload
+    def on(self, kind: Literal["engagementFilter", FeatureKind.ENGAGEMENT_FILTER], key: str, fn: Callable[[AppAsk[EngagementFilterQuestion]], AppAskResult[EngagementFilterAnswer]]) -> "AppRequestHandler": ...
+
+    @overload
+    def on(self, kind: Literal["engagementFilter", FeatureKind.ENGAGEMENT_FILTER], key: Callable[[AppAsk[EngagementFilterQuestion]], AppAskResult[EngagementFilterAnswer]]) -> "AppRequestHandler": ...
+
+    @overload
+    def on(self, kind: Literal["engagementFilter", FeatureKind.ENGAGEMENT_FILTER], key: Optional[str] = None) -> Callable[[_EngagementFilterFn], _EngagementFilterFn]: ...
+
+    @overload
+    def on(self, kind: Literal["programGroupSorter", FeatureKind.PROGRAM_GROUP_SORTER], key: str, fn: Callable[[AppAsk[ProgramGroupSorterQuestion]], AppAskResult[ProgramGroupSorterAnswer]]) -> "AppRequestHandler": ...
+
+    @overload
+    def on(self, kind: Literal["programGroupSorter", FeatureKind.PROGRAM_GROUP_SORTER], key: Callable[[AppAsk[ProgramGroupSorterQuestion]], AppAskResult[ProgramGroupSorterAnswer]]) -> "AppRequestHandler": ...
+
+    @overload
+    def on(self, kind: Literal["programGroupSorter", FeatureKind.PROGRAM_GROUP_SORTER], key: Optional[str] = None) -> Callable[[_ProgramGroupSorterFn], _ProgramGroupSorterFn]: ...
+
+    @overload
+    def on(self, kind: Literal["collaboratorGroupStructure", FeatureKind.COLLABORATOR_GROUP_STRUCTURE], key: str, fn: Callable[[AppAsk[CollaboratorGroupStructureQuestion]], AppAskResult[CollaboratorGroupStructureAnswer]]) -> "AppRequestHandler": ...
+
+    @overload
+    def on(self, kind: Literal["collaboratorGroupStructure", FeatureKind.COLLABORATOR_GROUP_STRUCTURE], key: Callable[[AppAsk[CollaboratorGroupStructureQuestion]], AppAskResult[CollaboratorGroupStructureAnswer]]) -> "AppRequestHandler": ...
+
+    @overload
+    def on(self, kind: Literal["collaboratorGroupStructure", FeatureKind.COLLABORATOR_GROUP_STRUCTURE], key: Optional[str] = None) -> Callable[[_CollaboratorGroupStructureFn], _CollaboratorGroupStructureFn]: ...
+
+    # End of the generated overloads.
     @overload
     def on(self, kind: str, key: str, fn: F) -> "AppRequestHandler": ...
 
@@ -390,34 +570,40 @@ class AppRequestHandler:
         return the handler, so calls chain. A function for the key wins over
         one for the kind.
 
-        ``kind`` is one of :data:`~siren.APP_REQUEST_KINDS`, as text or an
-        :class:`~siren.FeatureKind`, or a kind in the handler's
+        ``kind`` is one of :data:`~siren.APP_REQUEST_KINDS`, as text or as
+        a :class:`~siren.FeatureKind`, or a kind in the handler's
         ``extra_kinds``. Any other name is refused at once with words that
         say what to write, such as "distributionResolvr is not a feature
         kind. Did you mean distributionResolver?"
 
-        Raises :class:`ValueError` for a kind Siren never sends, an empty
-        key, a function that is not callable, and a second function for the
-        same kind and key.
+        For each kind Siren sends, the overloads type the function by the
+        kind: an ask's takes ``AppAsk[<Kind>Question]`` and returns
+        ``<Kind>Answer`` or :meth:`later`, and a tell's takes
+        ``AppTell[<Kind>Tell]``. A kind from ``extra_kinds`` takes any
+        function of the request.
+
+        Raises :class:`~siren.AppHandlerError` for a kind Siren never sends,
+        an empty key, a function that is not callable, and a second function
+        for the same kind and key.
         """
         if fn is None and callable(key):
             key, fn = None, key
         if isinstance(kind, Enum):
             kind = kind.value
         if not isinstance(kind, str) or kind == "":
-            raise ValueError("answers.on() needs the feature's kind, such as 'distributionResolver'.")
+            raise AppHandlerError("answers.on() needs the feature's kind, such as 'distributionResolver'.")
         problem = _kind_problem(kind, self._extra_kinds)
         if problem is not None:
-            raise ValueError(problem)
+            raise AppHandlerError(problem)
         if key is not None and (not isinstance(key, str) or key == ""):
-            raise ValueError("answers.on() takes the feature's key as text, such as 'split-by-score', or no key for every feature of the kind.")
+            raise AppHandlerError("answers.on() takes the feature's key as text, such as 'split-by-score', or no key for every feature of the kind.")
 
         def register(function: F) -> F:
             if not callable(function):
-                raise ValueError("answers.on() needs a function that takes the request.")
+                raise AppHandlerError("answers.on() needs a function that takes the request.")
             if (kind, key) in self._functions:
                 named = f"{kind} {key}" if key is not None else f"every {kind}"
-                raise ValueError(f"answers.on() already has a function for {named}.")
+                raise AppHandlerError(f"answers.on() already has a function for {named}.")
             self._functions[(kind, key)] = function
             return function
 
@@ -438,13 +624,13 @@ class AppRequestHandler:
         :class:`~siren.WebhookEvent`. Without a function it is a decorator.
         The events are signed and timed like an app request."""
         if not isinstance(type, str) or type == "" or type == REQUEST_EVENT:
-            raise ValueError("answers.on_event() needs a webhook event type, such as 'conversion.approved'. App requests go to answers.on().")
+            raise AppHandlerError("answers.on_event() needs a webhook event type, such as 'conversion.approved'. App requests go to answers.on().")
 
         def register(function: F) -> F:
             if not callable(function):
-                raise ValueError("answers.on_event() needs a function that takes the event.")
+                raise AppHandlerError("answers.on_event() needs a function that takes the event.")
             if type in self._events:
-                raise ValueError(f"answers.on_event() already has a function for {type}.")
+                raise AppHandlerError(f"answers.on_event() already has a function for {type}.")
             self._events[type] = function
             return function
 
@@ -453,7 +639,7 @@ class AppRequestHandler:
         register(fn)
         return self
 
-    def later(self) -> Any:
+    def later(self) -> AppAnswerLater:
         """What an ask's function returns when the app will answer by itself
         with ``apps.requests.answer()``, such as after a queue or a person
         decides. The handler posts nothing for it. Returning ``None`` from an
@@ -495,10 +681,11 @@ class AppRequestHandler:
         Siren's words. A tell's failure has the 500 its reply would have. An
         ``async def`` function is run to the end.
 
-        Raises :class:`TypeError` when ``request`` is not a request.
+        Raises :class:`~siren.AppHandlerError` when ``request`` is not a
+        request.
         """
         if not hasattr(request, "raw_body") or not hasattr(request, "headers"):
-            raise TypeError(
+            raise AppHandlerError(
                 "answers.simulate() takes a request from siren.testing.app_request(), "
                 "or anything with method, headers and raw_body."
             )
@@ -520,7 +707,7 @@ class AppRequestHandler:
         try:
             answer = _checked_answer(f"The function for {checked.label}", asked.id, returned)
         except ValueError as error:
-            return AppSimulation(200, {}, None, error)
+            return AppSimulation(200, {}, None, AppHandlerError(str(error)))
         refusal = siren_refusal(asked.feature["kind"], asked.data, answer)
         if refusal is not None:
             invalid = ValidationError(
@@ -533,8 +720,8 @@ class AppRequestHandler:
         return AppSimulation(200, {}, answer)
 
     @staticmethod
-    def _returned_nothing(run: "_Run") -> SirenError:
-        return SirenError(
+    def _returned_nothing(run: "_Run") -> AppHandlerError:
+        return AppHandlerError(
             f"The function for {run.label} returned nothing. Return the answer, "
             "or return answers.later() when you will answer with apps.requests.answer()."
         )
@@ -654,6 +841,11 @@ class AppRequestHandler:
         assert isinstance(request, AppRequest)
         if answer is None:
             self._report(self._returned_nothing(run), request, "ask")
+            return
+        try:
+            _checked_answer(f"The function for {run.label}", request.id, answer)
+        except ValueError as error:
+            self._report(AppHandlerError(str(error)), request, "ask")
             return
         try:
             # Retried on a lost connection, 429 and 5xx, since the same bytes

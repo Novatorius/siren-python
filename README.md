@@ -112,14 +112,39 @@ refuses an ask from any other Siren than the client's with a 500, and tells
 to the client's own address, never to one a request names.
 
 Each kind of feature changes only the function, as
-[Feature kinds](#feature-kinds) shows. The function gets an
-`siren.AppRequest`: `request.id` is the request key, the same on every send,
+[Feature kinds](#feature-kinds) shows. The function gets a
+`siren.AppTell` or a `siren.AppAsk`, both kinds of `siren.AppRequest`: `request.id` is the request key, the same on every send,
 `request.data` is the question, `request.feature` holds the feature's `kind`
 and `key`, and `request.answer_by` is when Siren wants an ask's answer. A tell's
 function returns nothing. An ask's function returns the answer, or
 `answers.later()` when the app will answer by itself with
 `apps.requests.answer()`. An ask's function that returns nothing is an error,
 which goes to `on_error`, so a forgotten `return` shows in the log.
+
+Annotate the function and mypy or your editor checks it against its kind.
+`on()` has an overload for each kind Siren sends, so a misspelled field or
+outcome fails the type check, and so does another kind's question:
+
+<!-- readme-test: typed -->
+```python
+from typing import Union
+
+import siren
+from siren import AppAnswerLater, AppAsk, DistributionResolverAnswer, DistributionResolverQuestion
+
+@answers.on("distributionResolver", "split-by-score")
+def split(request: AppAsk[DistributionResolverQuestion]) -> Union[DistributionResolverAnswer, AppAnswerLater]:
+    pool = request.data["pool"]  # request.data["pools"] fails the check
+    if not pool["metrics"]:
+        return answers.later()
+    shares = {str(m["collaboratorId"]): m["score"] for m in pool["metrics"]}
+    return {"outcome": "allocated", "units": pool["units"], "shares": shares}
+```
+
+Each kind's types are named for it: `<Kind>Question` and `<Kind>Answer` for
+an ask, and `<Kind>Tell` for a tell, such as `PayoutMethodQuestion` and
+`PostConversionActionTell`. A function for a kind from `extra_kinds` takes
+any request.
 
 Siren may send a tell twice, which is why the function above writes once by
 `request.id`. An ask's function can run more than once for one request too:
@@ -236,7 +261,7 @@ awaited, and under ASGI a plain one runs on a worker thread. An `on_event`
 function gets a `siren.WebhookEvent`.
 
 `on` takes the 13 kinds Siren sends, listed in `siren.APP_REQUEST_KINDS`, and
-refuses any other name at once with a `ValueError` that says what to write.
+refuses any other name at once with a `siren.AppHandlerError` that says what to write.
 `on("distributionResolvr", split)` raises "distributionResolvr is not a
 feature kind. Did you mean distributionResolver?" A screen name, snake_case,
 `customEvent`, a webhook event's name and the old `fulfillmentMethod` each get
@@ -307,7 +332,7 @@ replies:
 | An ask whose `answerUrl` is on another Siren than the client's `base_url` | 500, and `on_error` gets a `SirenError` naming both addresses and the `base_url` to set |
 | A tell with a function | 200 once the function returns, 500 when it raises, so Siren sends it again |
 | An ask with a function | 200 at once. The function runs after the reply, and the handler posts what it returns, or nothing for `answers.later()` |
-| When your function fails | A tell gets 500, and Siren tries again about 1, 2, 4 and 8 minutes later. An ask already got its 200, so Siren sends it again when its answer window closes, 60 minutes by default, and you can resend it sooner from Needs attention or with `siren apps resend <id>` |
+| When your function fails | A tell gets 500, and Siren tries again about 1, 2, 4 and 8 minutes later. An ask already got its 200, so Siren sends it again when its answer window closes, 60 minutes by default, and you can resend it sooner with `siren apps resend <id>` |
 | A kind and key with no function | 404 `No function handles <kind> <key>.`, so Siren shows the request under Needs attention once its sends run out |
 | Another `X-Siren-Event`, such as `conversion.approved` | 200 once the `on_event` function returns, 500 when it raises, and 200 when there is none |
 
@@ -338,7 +363,7 @@ explains, along with how long each kind waits.
 
 A program picks it. Siren tells the app each time a conversion is approved in
 the program. A test sale's conversion is never sent. The question is
-`siren.AppConversionActionData`:
+`siren.PostConversionActionTell`:
 
 <!-- readme-test: question-postConversionAction -->
 ```json
@@ -366,7 +391,7 @@ The handler replies 200 once the function returns, and 500 when it raises.
 ### Post-allocation action (`postAllocationAction`)
 
 A distributor picks it. Siren tells the app each time an allocation completes
-for the distributor. The question is `siren.AppAllocationActionData`:
+for the distributor. The question is `siren.PostAllocationActionTell`:
 
 <!-- readme-test: question-postAllocationAction -->
 ```json
@@ -391,7 +416,7 @@ def note_the_share(request):
 
 A distributor picks it. Siren asks the app how to divide a distribution's
 pool when the distribution closes, and waits for the answer before it pays
-anyone. The question is `siren.AppDistributionQuestion`:
+anyone. The question is `siren.DistributionResolverQuestion`:
 
 <!-- readme-test: question-distributionResolver -->
 ```json
@@ -417,7 +442,7 @@ def split_by_score(request):
     return {"outcome": "allocated", "units": pool["units"], "shares": shares}
 ```
 
-It answers `siren.AppDistributionAnswer`:
+It answers `siren.DistributionResolverAnswer`:
 
 <!-- readme-test: answer-distributionResolver -->
 ```json
@@ -434,7 +459,7 @@ Siren's documentation calls this an incentive resolver. A program picks it. Sire
 the app how to split the program's reward among the collaborators a sale,
 renewal or lead converted, and the rewards wait for the answer. A partial
 refund asks again about the smaller pool. The question is
-`siren.AppRewardQuestion`:
+`siren.IncentiveResolverQuestion`:
 
 <!-- readme-test: question-incentiveResolver -->
 ```json
@@ -462,7 +487,7 @@ def split_the_reward(request):
     return {"outcome": "rewards", "units": pool["units"], "rewards": rewards}
 ```
 
-It answers `siren.AppRewardAnswer`:
+It answers `siren.IncentiveResolverAnswer`:
 
 <!-- readme-test: answer-incentiveResolver -->
 ```json
@@ -479,7 +504,7 @@ Siren's documentation calls this an incentive type. A program picks it as its
 incentive type, for the conversions its `conversionTypes` setting lists.
 Siren asks the app which engagements a sale, lead or renewal converts and the
 pool they share. The program awards nothing until the answer. The question is
-`siren.AppIncentiveTypeQuestion`:
+`siren.IncentiveTypeQuestion`:
 
 <!-- readme-test: question-incentiveType -->
 ```json
@@ -509,7 +534,7 @@ def pay_on_closed_deals(request):
     return {"outcome": "award", "units": sale["units"], "pool": sale["total"] // 10, "engagementIds": ids}
 ```
 
-It answers `siren.AppIncentiveTypeAnswer`, an award or `{"outcome": "none"}`:
+It answers `siren.IncentiveTypeAnswer`, an award or `{"outcome": "none"}`:
 
 <!-- readme-test: answer-incentiveType -->
 ```json
@@ -526,8 +551,8 @@ Siren's documentation calls this a calculation strategy. A distributor's metric 
 picks it. Siren asks the app who scores, and how much, each time a metric
 triggers. The metric scores nothing until the answer, and the distribution it
 lands in waits for the answer before it pays anyone. The question is an
-`AppMetricCalculationQuestion`, and the answer an
-`AppMetricCalculationAnswer`. It looks like this:
+`MetricCalculationQuestion`, and the answer an
+`MetricCalculationAnswer`. It looks like this:
 
 <!-- readme-test: question-metricCalculation -->
 ```json
@@ -574,7 +599,7 @@ nobody.
 Siren's documentation calls this a metric filter. A distributor picks it. Siren asks
 the app whether a metric may score each time one triggers, after the
 distributor's built-in filters allow it. The question is an
-`AppMetricFilterQuestion`, and the answer an `AppMetricFilterAnswer`. It
+`MetricFilterQuestion`, and the answer an `MetricFilterAnswer`. It
 looks like this:
 
 <!-- readme-test: question-metricFilter -->
@@ -614,7 +639,7 @@ It answers `{"outcome": "allow"}`, or a suppress with a plain text `reason` of
 Siren's documentation calls this a transaction compiler. A program or a distributor
 picks it. Siren asks the app which of a sale's own lines count, once per sale
 for each program or distributor that picks it. The question is
-`siren.AppTransactionFilterQuestion`:
+`siren.TransactionFilterQuestion`:
 
 <!-- readme-test: question-transactionFilter -->
 ```json
@@ -643,7 +668,7 @@ def plan_lines(request):
     return {"outcome": "filtered", "include": [line["id"] for line in lines if line["type"] == "lineItem"]}
 ```
 
-It answers `siren.AppTransactionFilterAnswer`, the ids of the lines that
+It answers `siren.TransactionFilterAnswer`, the ids of the lines that
 count, each at most once. An empty list includes nothing. When a record picks
 more than one filter, a line counts when any of them includes it.
 
@@ -659,7 +684,7 @@ picks it. Siren asks the app who earns an engagement, and its score, each
 time one triggers. Siren makes no engagement until the answer, then makes the
 ones it names, dated when the trigger happened. A sale on that program and
 opportunity waits for the answer. The question is
-`siren.AppEngagementCalculationQuestion`:
+`siren.EngagementCalculationQuestion`:
 
 <!-- readme-test: question-engagementCalculation -->
 ```json
@@ -687,7 +712,7 @@ def visit_weight(request):
     return {"outcome": "engagements", "results": [{"collaboratorId": request.data["triggeringCollaborator"]["id"], "score": score}]}
 ```
 
-It answers `siren.AppEngagementCalculationAnswer`, with the same limits as a
+It answers `siren.EngagementCalculationAnswer`, with the same limits as a
 metric calculation. An empty list makes no engagement.
 
 <!-- readme-test: answer-engagementCalculation -->
@@ -700,7 +725,7 @@ metric calculation. An empty list makes no engagement.
 Siren's documentation calls this an engagement filter. A program picks it. Siren asks
 the app whether an engagement may be made each time one triggers. Siren makes
 no engagement until the answer, and a sale on that program and opportunity
-waits for it. The question is `siren.AppEngagementFilterQuestion`:
+waits for it. The question is `siren.EngagementFilterQuestion`:
 
 <!-- readme-test: question-engagementFilter -->
 ```json
@@ -723,7 +748,7 @@ def staff_check(request):
     return {"outcome": "allow"}
 ```
 
-It answers `siren.AppEngagementFilterAnswer`, an allow or a suppress with a
+It answers `siren.EngagementFilterAnswer`, an allow or a suppress with a
 plain text `reason` of 1 to 200 characters, which Siren notes on the
 opportunity:
 
@@ -738,7 +763,7 @@ Siren's documentation calls this a group sorter. A program group picks it. Siren
 the app which program of the group a sale or lead tries first. No program in
 the group is awarded until the answer, and later sales in the group wait
 behind this one. A renewal doesn't ask. It goes to the program in the group
-whose engagement is oldest. The question is `siren.AppGroupOrderQuestion`:
+whose engagement is oldest. The question is `siren.ProgramGroupSorterQuestion`:
 
 <!-- readme-test: question-programGroupSorter -->
 ```json
@@ -764,7 +789,7 @@ def pick_the_program(request):
     return {"outcome": "sorted", "programIds": sorted(best, key=best.get, reverse=True)}
 ```
 
-It answers `siren.AppGroupOrderAnswer`, every program id of the question
+It answers `siren.ProgramGroupSorterAnswer`, every program id of the question
 exactly once, in the order Siren tries them. The first program that converts
 wins the group.
 
@@ -779,8 +804,8 @@ A collaborator group picks it. Siren asks the app who sits above and below
 whom in the group each time a cascade runs over it, for a distributor's
 metric cascade or a program's engagement cascade. The cascade credits nobody
 above or below until the answer. The question is
-`siren.AppCollaboratorGroupStructureDistributorQuestion` for a distributor,
-as here, and `siren.AppCollaboratorGroupStructureProgramQuestion` for a
+`siren.CollaboratorGroupStructureDistributorQuestion` for a distributor,
+as here, and `siren.CollaboratorGroupStructureProgramQuestion` for a
 program, which carries an engagement calculation's keys in place of the
 metric's:
 
@@ -815,7 +840,7 @@ def team_tree(request):
     return {"outcome": "structure", "shape": "chain", "order": [member["collaboratorId"] for member in members]}
 ```
 
-It answers `siren.AppCollaboratorGroupStructureAnswer`, a chain or a tree. A
+It answers `siren.CollaboratorGroupStructureAnswer`, a chain or a tree. A
 chain's `order` lists every member's `collaboratorId` once, top first:
 
 <!-- readme-test: answer-collaboratorGroupStructure -->
@@ -832,8 +857,8 @@ member's id, or to `None` for a top member, with no cycle:
 An autofulfiller picks it for one of the currencies the feature's
 `currencies` setting names. Siren asks the app to pay a payout after payouts
 are made, and when someone sends or retries one. The payout shows as
-processing until the answer. The question is an `AppPayoutQuestion`, and the
-answer an `AppPayoutAnswer`, either `AppPayoutPaid` or `AppPayoutFailed`. It
+processing until the answer. The question is an `PayoutMethodQuestion`, and the
+answer an `PayoutMethodAnswer`, either `PayoutMethodPaidAnswer` or `PayoutMethodFailedAnswer`. It
 looks like this:
 
 <!-- readme-test: question-payoutMethod -->
@@ -1051,6 +1076,38 @@ mapping, one with no text `outcome`, and one over 16384 bytes as JSON. It
 returns an `AppAnswerReceipt`, whose `duplicate` is true when Siren already
 held this same answer.
 
+### Find and resend requests
+
+An admin's session lists the organization's requests, reads one, and sends
+one again, as the Node SDK does. These routes don't take an app's key.
+
+<!-- readme-test: requests -->
+```python
+client = siren.Siren(api_key=ADMIN_API_KEY)
+
+for row in client.apps.requests.list(status="needs_attention"):
+    print(row["id"], row["feature"], row["kind"], row["sendCount"], row["lastError"])
+
+request = client.apps.requests.retrieve("apr_" + "b3" * 16)
+print(request["data"], request["answer"], request["answeredByUser"])
+
+client.apps.requests.resend(request["id"])
+```
+
+`list()` sends `GET /apps/requests` and returns the latest 50, newest first,
+each a `siren.AppRequestRecord`. `status` is one of
+`siren.APP_REQUEST_STATUSES`: `pending`, `sent`, `delivered`, `answered`,
+`applied`, `needs_attention` and `dropped`. `retrieve()` sends
+`GET /apps/requests/{id}` and returns a `siren.AppRequestDetail`, which adds
+the `data` Siren sent, the `answer` it took and who answered by hand.
+
+`resend()` sends `POST /apps/requests/{id}/resend` once and returns the
+request as it now stands. An ask gets a new answer window, and a request
+that holds an answer Siren hasn't applied gets that answer applied in place
+of a new send. Siren refuses an `applied` request, a `delivered` tell and one
+it would send while the app is off with 409 `app_request_not_resendable`,
+raised as `ConflictError`.
+
 ## Errors and retries
 
 What happens to an ask's answer after the handler's 200:
@@ -1069,8 +1126,9 @@ What happens to an ask's answer after the handler's 200:
   an ask's function that returns nothing.
 - Siren sends a failed ask again only when its answer window closes. The
   default `on_error` line says when, such as "Siren sends it again after
-  16:58 UTC, when its answer window closes. Resend it sooner from Needs
-  attention in Siren Cloud, or with `siren apps resend apr_b339...`."
+  16:58 UTC, when its answer window closes. Resend it sooner with
+  `siren apps resend apr_b339...`." Siren's API resends a pending ask, while
+  Siren Cloud offers Send again only once a request needs attention.
 
 What Siren does when an app doesn't answer:
 
@@ -1097,7 +1155,8 @@ The errors the SDK raises all subclass `siren.SirenError`, with `message`,
 | When | Error |
 |---|---|
 | A request's signature, time or envelope fails a check | `SignatureVerificationError`, with the reason |
-| A bad argument or answer, before anything is sent | `ValueError` |
+| A mistake in the app's code that the handler finds: an unknown kind, a second function for one kind and key, a bad option, a function that returns nothing or an answer it can't post, a bad argument to `simulate()` | `AppHandlerError` |
+| A bad argument to `apps.requests.answer()`, `list()`, `retrieve()` or `resend()`, before anything is sent | `ValueError` |
 | Siren takes no answer from this key | `AuthenticationError`, `code` `ErrorCode.APP_ANSWER_UNAUTHORIZED` |
 | Siren refuses the answer for its kind | `ValidationError`, `code` `app_answer_invalid` |
 | A different answer to an answered ask, or an answer after the drop | `ConflictError`, `code` `app_request_already_answered` or `app_request_dropped` |

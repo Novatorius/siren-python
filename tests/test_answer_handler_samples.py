@@ -25,7 +25,7 @@ import re
 import threading
 import urllib.request
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, get_args
 from wsgiref.simple_server import WSGIRequestHandler, make_server
 
 import httpx
@@ -127,11 +127,13 @@ def keeps_the_rules(kind: str, question: Dict[str, Any], answer: Dict[str, Any])
         return isinstance(value, int) and not isinstance(value, bool) and value >= 0
 
     def fields(typed: Any) -> None:
-        assert set(answer) <= set(typed.__annotations__), (kind, sorted(answer))
+        # An answer with variants is a Union of TypedDicts, one per outcome.
+        keys = set().union(*(variant.__annotations__ for variant in get_args(typed) or (typed,)))
+        assert set(answer) <= keys, (kind, sorted(answer))
 
     outcome = answer["outcome"]
     if kind == "distributionResolver":
-        fields(siren.AppDistributionAnswer)
+        fields(siren.DistributionResolverAnswer)
         pool = question["pool"]
         step = 10 ** (pool["currency"]["scale"] - pool["currency"]["decimalPlaces"])
         assert outcome == "allocated" and answer["units"] == pool["units"]
@@ -139,7 +141,7 @@ def keeps_the_rules(kind: str, question: Dict[str, Any], answer: Dict[str, Any])
         assert all(whole(v) and v % step == 0 for v in answer["shares"].values())
         assert sum(answer["shares"].values()) <= pool["value"]
     elif kind == "incentiveResolver":
-        fields(siren.AppRewardAnswer)
+        fields(siren.IncentiveResolverAnswer)
         pool = question["pool"]
         assert outcome == "rewards" and answer["units"] == pool["units"]
         assert set(answer["rewards"]) == {str(c["conversionId"]) for c in question["conversions"]}
@@ -148,33 +150,33 @@ def keeps_the_rules(kind: str, question: Dict[str, Any], answer: Dict[str, Any])
         if outcome == "none":
             assert answer == {"outcome": "none"}
         else:
-            fields(siren.AppIncentiveTypeAwardAnswer)
+            fields(siren.IncentiveTypeAwardAnswer)
             ids = answer["engagementIds"]
             assert outcome == "award" and answer["units"] == question["program"]["units"] and whole(answer["pool"])
             assert ids and len(set(ids)) == len(ids) and set(ids) <= {e["engagementId"] for e in question["engagements"]}
     elif kind in ("metricCalculation", "engagementCalculation"):
         if kind == "engagementCalculation":
-            fields(siren.AppEngagementCalculationAnswer)
+            fields(siren.EngagementCalculationAnswer)
         results = answer["results"]
         assert outcome == ("scores" if kind == "metricCalculation" else "engagements") and len(results) <= 50
         assert len({r["collaboratorId"] for r in results}) == len(results)
         assert all(whole(r["score"]) for r in results)
     elif kind in ("metricFilter", "engagementFilter"):
         if kind == "engagementFilter":
-            fields(siren.AppEngagementFilterAnswer)
+            fields(siren.EngagementFilterAnswer)
         assert outcome in ("allow", "suppress")
         if outcome == "suppress":
             assert isinstance(answer["reason"], str) and 1 <= len(answer["reason"]) <= 200
     elif kind == "transactionFilter":
-        fields(siren.AppTransactionFilterAnswer)
+        fields(siren.TransactionFilterAnswer)
         include = answer["include"]
         assert outcome == "filtered" and len(set(include)) == len(include)
         assert set(include) <= {line["id"] for line in question["lines"]}
     elif kind == "programGroupSorter":
-        fields(siren.AppGroupOrderAnswer)
+        fields(siren.ProgramGroupSorterAnswer)
         assert outcome == "sorted" and sorted(answer["programIds"]) == sorted(p["id"] for p in question["programs"])
     elif kind == "collaboratorGroupStructure":
-        fields(siren.AppCollaboratorGroupChain if answer["shape"] == "chain" else siren.AppCollaboratorGroupTree)
+        fields(siren.CollaboratorGroupStructureChainAnswer if answer["shape"] == "chain" else siren.CollaboratorGroupStructureTreeAnswer)
         members = sorted(m["collaboratorId"] for m in question["members"])
         assert outcome == "structure"
         if answer["shape"] == "chain":

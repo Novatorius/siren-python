@@ -18,12 +18,12 @@ import pytest
 
 import siren
 from siren import (
-    AppCollaboratorGroupChain,
+    CollaboratorGroupStructureChainAnswer,
     AppCollaboratorGroupMember,
-    AppCollaboratorGroupStructureAnswer,
-    AppCollaboratorGroupStructureDistributorQuestion,
-    AppCollaboratorGroupStructureProgramQuestion,
-    AppCollaboratorGroupTree,
+    CollaboratorGroupStructureAnswer,
+    CollaboratorGroupStructureDistributorQuestion,
+    CollaboratorGroupStructureProgramQuestion,
+    CollaboratorGroupStructureTreeAnswer,
     FeatureKind,
     AppRequest,
 )
@@ -35,7 +35,7 @@ CONTRACTS = json.loads((Path(__file__).parent / "fixtures" / "apps-feature-contr
 API_BASE = CONTRACTS["apiBase"]
 REQUEST_ID = "apr_b79943ff8ca353ce5cf5312bb3fa66c7"
 
-QUESTION: AppCollaboratorGroupStructureDistributorQuestion = {
+QUESTION: CollaboratorGroupStructureDistributorQuestion = {
     "group": {"id": 4, "name": "Northeast team"},
     "members": [
         {"collaboratorId": 42, "name": "Riley Rep", "status": "active", "metadata": {"rank": 3}},
@@ -54,7 +54,7 @@ QUESTION: AppCollaboratorGroupStructureDistributorQuestion = {
     "sale": None,
 }
 
-PROGRAM_QUESTION: AppCollaboratorGroupStructureProgramQuestion = {
+PROGRAM_QUESTION: CollaboratorGroupStructureProgramQuestion = {
     "group": {"id": 4, "name": "Northeast team"},
     "members": QUESTION["members"],
     "for": {"type": "program", "id": 3},
@@ -67,8 +67,8 @@ PROGRAM_QUESTION: AppCollaboratorGroupStructureProgramQuestion = {
     "opportunity": {"id": 615, "customerId": None},
 }
 
-CHAIN: AppCollaboratorGroupChain = {"outcome": "structure", "shape": "chain", "order": [63, 57, 42]}
-TREE: AppCollaboratorGroupTree = {"outcome": "structure", "shape": "tree", "parents": {"42": 57, "57": 63, "63": None}}
+CHAIN: CollaboratorGroupStructureChainAnswer = {"outcome": "structure", "shape": "chain", "order": [63, 57, 42]}
+TREE: CollaboratorGroupStructureTreeAnswer = {"outcome": "structure", "shape": "tree", "parents": {"42": 57, "57": 63, "63": None}}
 
 
 def body_for(key: str, question: Optional[Dict[str, object]] = None) -> str:
@@ -93,9 +93,9 @@ def sign(body: str) -> Dict[str, str]:
 def test_the_kind_is_named_with_the_value_siren_stores():
     assert FeatureKind.COLLABORATOR_GROUP_STRUCTURE == "collaboratorGroupStructure"
     assert "collaboratorGroupStructure" in [kind.value for kind in FeatureKind]
-    assert siren.AppCollaboratorGroupStructureAnswer is AppCollaboratorGroupStructureAnswer
-    assert siren.AppCollaboratorGroupStructureProgramQuestion is AppCollaboratorGroupStructureProgramQuestion
-    assert "AppCollaboratorGroupStructureProgramQuestion" in siren.__all__
+    assert siren.CollaboratorGroupStructureAnswer is CollaboratorGroupStructureAnswer
+    assert siren.CollaboratorGroupStructureProgramQuestion is CollaboratorGroupStructureProgramQuestion
+    assert "CollaboratorGroupStructureProgramQuestion" in siren.__all__
 
 
 def test_each_member_carries_its_status_at_the_trigger():
@@ -103,11 +103,18 @@ def test_each_member_carries_its_status_at_the_trigger():
 
 
 def test_the_program_question_holds_the_group_keys_and_the_engagement_calculation_keys():
-    from siren import AppEngagementCalculationQuestion, AppCollaboratorGroupStructureQuestion
+    from siren import EngagementCalculationQuestion, CollaboratorGroupStructureQuestion
 
-    program_keys = set(AppCollaboratorGroupStructureProgramQuestion.__annotations__)
-    group_keys = set(AppCollaboratorGroupStructureQuestion.__annotations__)
-    engagement_keys = set(AppEngagementCalculationQuestion.__annotations__)
+    program_keys = set(CollaboratorGroupStructureProgramQuestion.__annotations__)
+    # The question is the Union of the distributor and program variants,
+    # which share the group's keys.
+    from typing import get_args
+
+    from siren.types import _CollaboratorGroupStructureFields
+
+    assert CollaboratorGroupStructureProgramQuestion in get_args(CollaboratorGroupStructureQuestion)
+    group_keys = set(_CollaboratorGroupStructureFields.__annotations__)
+    engagement_keys = set(EngagementCalculationQuestion.__annotations__)
     assert group_keys <= program_keys
     assert engagement_keys <= program_keys
     assert set(PROGRAM_QUESTION) == program_keys
@@ -118,11 +125,11 @@ def test_the_handler_posts_a_chain_and_a_tree_as_the_functions_return_them():
 
     seen: List[BaseException] = []
 
-    def by_rank(request: AppRequest) -> AppCollaboratorGroupStructureAnswer:
+    def by_rank(request: AppRequest) -> CollaboratorGroupStructureAnswer:
         members = sorted(request.data["members"], key=lambda member: member["metadata"]["rank"])
         return {"outcome": "structure", "shape": "chain", "order": [member["collaboratorId"] for member in members]}
 
-    def by_lead(request: AppRequest) -> AppCollaboratorGroupStructureAnswer:
+    def by_lead(request: AppRequest) -> CollaboratorGroupStructureAnswer:
         members = request.data["members"]
         parents: Dict[str, Optional[int]] = {}
         for index, member in enumerate(members):

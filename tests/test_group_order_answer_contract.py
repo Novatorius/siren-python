@@ -60,7 +60,7 @@ def answer_of(data: dict) -> dict:
 
 def test_the_kind_is_the_value_siren_stores():
     assert FeatureKind.PROGRAM_GROUP_SORTER == "programGroupSorter"
-    assert siren.AppGroupOrderQuestion.__name__ == "AppGroupOrderQuestion"
+    assert siren.ProgramGroupSorterQuestion.__name__ == "ProgramGroupSorterQuestion"
 
 
 def test_the_sample_answer_is_the_fixtures_and_passes_sirens_check():

@@ -88,35 +88,35 @@ def test_an_enum_member_registers_and_is_found_by_its_string():
 )
 def test_a_kind_siren_never_sends_is_refused_with_what_to_write(kind, words):
     answers = handler()
-    with pytest.raises(ValueError) as refused:
+    with pytest.raises(siren.AppHandlerError) as refused:
         answers.on(kind, "my-feature", noop)
     assert str(refused.value) == words
     # The catch-all and the decorator forms refuse it too, before any function.
-    with pytest.raises(ValueError, match="kind|event|name|camelCase"):
+    with pytest.raises(siren.AppHandlerError, match="kind|event|name|camelCase"):
         answers.on(kind, noop)
-    with pytest.raises(ValueError, match="kind|event|name|camelCase"):
+    with pytest.raises(siren.AppHandlerError, match="kind|event|name|camelCase"):
         answers.on(kind, "my-feature")
 
 
 def test_a_name_far_from_every_kind_lists_the_kinds():
-    with pytest.raises(ValueError) as refused:
+    with pytest.raises(siren.AppHandlerError) as refused:
         handler().on("refundPolicy", "my-feature", noop)
     assert str(refused.value) == "refundPolicy is not a feature kind. The kinds are: " + ", ".join(siren.APP_REQUEST_KINDS) + "."
 
 
 def test_the_custom_event_member_is_refused_too():
-    with pytest.raises(ValueError, match="events.ingest"):
+    with pytest.raises(siren.AppHandlerError, match="events.ingest"):
         handler().on(FeatureKind.CUSTOM_EVENT, "my-feature", noop)
 
 
 def test_extra_kinds_lets_a_kind_a_newer_siren_sends_register():
     answers = handler(extra_kinds=["refundPolicy"])
     assert answers.on("refundPolicy", "my-feature", noop) is answers
-    with pytest.raises(ValueError, match="distributionResolvr is not a feature kind"):
+    with pytest.raises(siren.AppHandlerError, match="distributionResolvr is not a feature kind"):
         answers.on("distributionResolvr", "my-feature", noop)
 
 
 @pytest.mark.parametrize("extra", ["refundPolicy", [""], [3], ["has.dot"]])
 def test_extra_kinds_takes_a_list_of_kind_names(extra):
-    with pytest.raises(ValueError, match="extra_kinds"):
+    with pytest.raises(siren.AppHandlerError, match="extra_kinds"):
         handler(extra_kinds=extra)

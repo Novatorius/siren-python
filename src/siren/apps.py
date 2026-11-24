@@ -18,8 +18,18 @@ from fractions import Fraction
 from typing import TYPE_CHECKING, Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple, Union, cast
 
 from ._client import HttpClient, parse_json
-from .errors import ApiError, AuthenticationError, ErrorCode, SignatureVerificationError
-from .types import AppAnswerReceipt, AppFeature, AppRequest, RemovedAppFeature
+from .errors import ApiError, AppHandlerError, AuthenticationError, ErrorCode, SignatureVerificationError
+from .types import (
+    APP_REQUEST_STATUSES,
+    AppAnswerReceipt,
+    AppAsk,
+    AppFeature,
+    AppRequest,
+    AppRequestDetail,
+    AppRequestRecord,
+    AppTell,
+    RemovedAppFeature,
+)
 
 if TYPE_CHECKING:  # pragma: no cover
     from .app_requests import AppRequestHandler
@@ -205,15 +215,128 @@ def _checked_answer(method: str, request_id: Any, answer: Any) -> Dict[str, Any]
     return copy
 
 
-class AppRequests:
-    """``siren.apps.requests`` — answer an ask Siren sent the app.
+#: The kinds whose question holds the engagement type's ``args``.
+_ARGS_KINDS = ("engagementCalculation", "collaboratorGroupStructure")
 
-    The client must be made with the app's own API key, the one Siren gave
-    the app.
+
+def _read_data(kind: Any, data: Mapping[str, Any]) -> Dict[str, Any]:
+    """A request's ``data`` as the SDK's types describe it. Siren sends an
+    engagement type with no settings as ``"args": []``, because PHP writes an
+    empty array as a list (AppEngagementQuestion::args() and the
+    ``json_encode`` in AppRequestService on Siren feat/apps). The SDK reads it
+    as ``{}``, so ``args.get(...)`` works either way. ``raw`` keeps the body
+    as sent."""
+    copy = dict(data)
+    if kind in _ARGS_KINDS and copy.get("args") == []:
+        copy["args"] = {}
+    return copy
+
+
+def _request_id(request_id: Any, method: str) -> str:
+    if not isinstance(request_id, str) or not _REQUEST_ID.match(request_id):
+        raise ValueError(
+            f"{method} needs a request id of apr_ and 32 lowercase hex characters, and got {request_id!r}."
+        )
+    return request_id
+
+
+class AppRequests:
+    """``siren.apps.requests`` — the requests Siren sent the organization's
+    apps.
+
+    :meth:`answer` takes the app's own API key, the one Siren gave the app,
+    or an admin's session to answer by hand. :meth:`list`, :meth:`retrieve`
+    and :meth:`resend` take an admin's session, as every app route does. An
+    app's key gets 401 ``api_key_not_accepted``, raised as
+    :class:`~siren.ApiKeyNotAcceptedError`.
     """
+
+    #: The filters :meth:`list` sends, the one ``GET /apps/requests`` reads
+    #: (ListAppRequests.php).
+    LIST_FILTERS: Tuple[str, ...] = ("status",)
 
     def __init__(self, client: HttpClient) -> None:
         self._client = client
+
+    def list(self, *, status: Optional[str] = None) -> "List[AppRequestRecord]":
+        """The organization's latest requests, newest first, at most 50,
+        from ``GET /apps/requests``, with ``?status=`` when ``status`` is
+        given. Retried as a read.
+
+        Raises :class:`ValueError` before sending for a status outside
+        :data:`~siren.APP_REQUEST_STATUSES`, and :class:`~siren.ApiError`
+        when the 2xx body holds no list of requests in ``requests``.
+        """
+        if status is not None and status not in APP_REQUEST_STATUSES:
+            raise ValueError(f"apps.requests.list() takes a status of {', '.join(APP_REQUEST_STATUSES)}.")
+        params = {} if status is None else {"status": status}
+        response = self._client.request("GET", "/apps/requests", params=params)
+        body = parse_json(response)
+        rows = body.get("requests") if isinstance(body, dict) else None
+        if not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows):
+            raise ApiError(
+                "Siren answered GET /apps/requests with no list of requests in `requests`.",
+                status_code=response.status_code,
+                data=body,
+            )
+        return cast("List[AppRequestRecord]", rows)
+
+    def retrieve(self, request_id: str) -> "AppRequestDetail":
+        """One request by its id, however old, from
+        ``GET /apps/requests/{id}``: the list's fields, the ``data`` Siren
+        sent the app, the ``answer`` it took or ``None``, and
+        ``answeredByUser``, the person who answered by hand or ``None``.
+        Retried as a read.
+
+        Raises :class:`ValueError` before sending for an id that is not
+        ``apr_`` and 32 lowercase hex characters,
+        :class:`~siren.NotFoundError` for a request the organization lacks
+        (``app_request_not_found``, GetAppRequest.php), and
+        :class:`~siren.ApiError` when the 2xx body is not this request.
+        """
+        key = _request_id(request_id, "apps.requests.retrieve()")
+        path = f"/apps/requests/{key}"
+        response = self._client.request("GET", path)
+        body = parse_json(response)
+        problem = None
+        if not isinstance(body, dict) or body.get("id") != key:
+            problem = "another request's id"
+        elif not isinstance(body.get("data"), dict):
+            problem = "no object in `data`"
+        elif body.get("answer") is not None and not isinstance(body.get("answer"), dict):
+            problem = "an `answer` that is neither an object nor null"
+        else:
+            user = body.get("answeredByUser")
+            if user is not None and not (
+                isinstance(user, dict) and isinstance(user.get("id"), int) and isinstance(user.get("email"), str)
+            ):
+                problem = "an `answeredByUser` that is neither {id, email} nor null"
+        if problem is not None:
+            raise ApiError(f"Siren answered GET {path} with {problem}.", status_code=response.status_code, data=body)
+        return cast("AppRequestDetail", body)
+
+    def resend(self, request_id: str) -> "AppRequestRecord":
+        """Send a request again under the same key, with
+        ``POST /apps/requests/{id}/resend``, and return it as it now stands.
+        An ask gets a new answer window. A request that holds an answer
+        Siren has not applied is not sent to the app again: Siren applies
+        its stored answer instead, even while the app is off. Sent once.
+
+        Raises :class:`ValueError` before sending for an id that is not
+        ``apr_`` and 32 lowercase hex characters,
+        :class:`~siren.ConflictError` with ``app_request_not_resendable`` for
+        a request that is ``applied``, a ``delivered`` tell, or one Siren
+        would send while its app is off, :class:`~siren.NotFoundError` for a
+        request the organization lacks (ResendAppRequest.php), and
+        :class:`~siren.ApiError` when the 2xx body is not this request.
+        """
+        key = _request_id(request_id, "apps.requests.resend()")
+        path = f"/apps/requests/{key}/resend"
+        response = self._client.request("POST", path, retryable=False)
+        body = parse_json(response)
+        if not isinstance(body, dict) or body.get("id") != key:
+            raise ApiError(f"Siren answered POST {path} with a body that is not this request.", status_code=response.status_code, data=body)
+        return cast("AppRequestRecord", body)
 
     def answer(self, request_id: str, answer: Mapping[str, Any]) -> AppAnswerReceipt:
         """Answer an ask (``POST /apps/requests/{id}/answer``). Sent once and
@@ -463,17 +586,17 @@ class Apps:
         ``extra_kinds`` lists kinds a newer Siren sends that this SDK doesn't
         know yet, for :meth:`AppRequestHandler.on` to take.
 
-        Raises :class:`ValueError` for no secret, a tolerance outside 1
-        to :data:`MAX_TOLERANCE_SECONDS`, a ``run_later`` or ``on_error``
-        that is not callable, and an ``extra_kinds`` that is not a list of
-        kind names.
+        Raises :class:`~siren.AppHandlerError` for no secret, a tolerance
+        outside 1 to :data:`MAX_TOLERANCE_SECONDS`, a ``run_later`` or
+        ``on_error`` that is not callable, and an ``extra_kinds`` that is not
+        a list of kind names.
         """
         from .app_requests import AppRequestHandler
 
         if signing_secret is None:
             signing_secret = os.environ.get("SIREN_SIGNING_SECRET") or None
         if signing_secret is None:
-            raise ValueError(
+            raise AppHandlerError(
                 "apps.request_handler() needs the app's signing secret, which Siren showed once when it made the app. "
                 "Pass signing_secret, or set SIREN_SIGNING_SECRET."
             )
@@ -563,8 +686,9 @@ class Apps:
         *,
         tolerance_seconds: Optional[int] = None,
         now: Optional[float] = None,
-    ) -> AppRequest:
-        """Check a request Siren signed and sent the app, and return it parsed.
+    ) -> "AppRequest[Dict[str, Any]]":
+        """Check a request Siren signed and sent the app, and return it parsed:
+        an :class:`~siren.AppAsk` or an :class:`~siren.AppTell`.
         It reads nothing over the network.
 
         In this order:
@@ -623,7 +747,8 @@ class Apps:
         if problem is not None:
             raise _BodyRefused(problem)
 
-        return AppRequest(
+        made = AppAsk if body["mode"] == "ask" else AppTell
+        return made(
             version=1,
             id=body["id"],
             type=body["type"],
@@ -633,7 +758,7 @@ class Apps:
             created_at=body["createdAt"],
             answer_by=body.get("answerBy") if isinstance(body.get("answerBy"), str) else None,
             answer_url=body.get("answerUrl") if isinstance(body.get("answerUrl"), str) else None,
-            data=dict(body["data"]),
+            data=_read_data(body["feature"]["kind"], body["data"]),
             timestamp=signed_at,
             delivery_id=_header(headers, "X-Siren-Delivery"),
             raw=body,
