@@ -144,20 +144,52 @@ def test_simulate_shows_the_reply_for_a_request_the_handler_refuses():
     assert wrong_secret.status == 401
 
 
-def test_simulate_raises_what_the_function_raised():
+def test_simulate_returns_what_the_function_raised_instead_of_raising():
     answers = siren.Siren(api_key="sk_test").apps.request_handler(SECRET)
 
     @answers.on("metricFilter", "refund-check")
     def broken(request):
         raise RuntimeError("the refund lookup is down")
 
-    with pytest.raises(RuntimeError, match="refund lookup"):
-        answers.simulate(testing.app_request("metricFilter", "refund-check", secret=SECRET))
+    result = answers.simulate(testing.app_request("metricFilter", "refund-check", secret=SECRET))
+
+    assert (result.status, result.answer) == (200, None)
+    assert isinstance(result.error, RuntimeError) and str(result.error) == "the refund lookup is down"
 
 
-def test_simulate_refuses_an_answer_the_handler_would_not_post():
+def test_simulate_returns_a_tells_failure_with_its_500():
+    answers = siren.Siren(api_key="sk_test").apps.request_handler(SECRET)
+
+    @answers.on("postConversionAction", "tell-the-crm")
+    def broken(request):
+        raise RuntimeError("the crm is down")
+
+    result = answers.simulate(testing.app_request("postConversionAction", "tell-the-crm", secret=SECRET))
+
+    assert result.status == 500
+    assert result.body == {"error": "The function for postConversionAction tell-the-crm failed, so Siren will send the request again."}
+    assert isinstance(result.error, RuntimeError)
+
+
+def test_simulate_returns_an_answer_the_handler_would_not_post():
     answers = siren.Siren(api_key="sk_test").apps.request_handler(SECRET)
     answers.on("metricFilter", "refund-check", lambda request: {"allow": True})
 
-    with pytest.raises(ValueError, match="outcome"):
-        answers.simulate(testing.app_request("metricFilter", "refund-check", secret=SECRET))
+    result = answers.simulate(testing.app_request("metricFilter", "refund-check", secret=SECRET))
+
+    assert result.answer is None
+    assert isinstance(result.error, ValueError) and "outcome" in str(result.error)
+
+
+def test_a_refused_request_has_no_error_in_the_result():
+    answers = siren.Siren(api_key="sk_test").apps.request_handler(SECRET)
+
+    assert answers.simulate(testing.app_request("metricFilter", "refund-check", secret=SECRET)).error is None
+
+
+@pytest.mark.parametrize("bad", [None, "POST /siren", {"raw_body": b"{}"}])
+def test_simulate_still_raises_for_something_that_is_not_a_request(bad):
+    answers = siren.Siren(api_key="sk_test").apps.request_handler(SECRET)
+
+    with pytest.raises(TypeError, match="siren.testing.app_request"):
+        answers.simulate(bad)

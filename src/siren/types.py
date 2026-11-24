@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Dict, Iterator, List, Literal, Optional, TypedDict, Union
+from typing import Any, Dict, Iterator, List, Literal, Optional, Tuple, TypedDict, Union
 
 
 class WebhookEventType(str, Enum):
@@ -203,18 +203,47 @@ class AppItemKind(str, Enum):
         return self.value
 
 
+#: The 13 kinds Siren sends an app a request for, in Siren's order (Siren
+#: feat/apps, frontend/src/platform/saas/apps/apps.ts, ``APP_KINDS``). The
+#: request handler's ``on()`` takes these, and the kinds in its
+#: ``extra_kinds`` option. ``customEvent`` is not one: the app sends a custom
+#: event, and Siren never sends one.
+APP_REQUEST_KINDS: Tuple[str, ...] = (
+    "postConversionAction",
+    "postAllocationAction",
+    "payoutMethod",
+    "distributionResolver",
+    "incentiveResolver",
+    "incentiveType",
+    "metricCalculation",
+    "metricFilter",
+    "transactionFilter",
+    "engagementCalculation",
+    "engagementFilter",
+    "programGroupSorter",
+    "collaboratorGroupStructure",
+)
+
+
 @dataclass(frozen=True)
 class AppRequest:
     """A request Siren signed and sent an app, as ``apps.verify_request()``
     returns it once the signature, the time and the envelope check out.
 
-    Siren may deliver one request more than once, so drop a repeat by ``id``,
-    the request key, the same on every send. ``mode`` is ``tell``, which
-    waits for no answer, or ``ask``, answered with ``apps.requests.answer()``
-    by ``answer_by``. ``item`` holds the feature's ``kind``, ``key`` and
-    ``app:{n}`` ``id``. ``data`` is the question. ``timestamp`` is the Unix
-    time Siren signed the send at. ``delivery_id`` is the
-    ``X-Siren-Delivery`` header, one per send. ``raw`` holds the whole body.
+    Three ids, and one to dedupe on:
+
+    - ``id`` is the request's own id, ``apr_`` and 32 hex characters, the
+      same on every send of this request. Siren may send one request more
+      than once, so write once by ``id``.
+    - ``item["id"]`` names the feature, ``app:{n}``, the same for every
+      request to it.
+    - ``delivery_id`` is the ``X-Siren-Delivery`` header, which names one
+      delivery and changes on every send.
+
+    ``mode`` is ``tell``, which waits for no answer, or ``ask``, answered by
+    ``answer_by``. ``item`` holds the feature's ``kind``, ``key`` and ``id``.
+    ``data`` is the question. ``timestamp`` is the Unix time Siren signed
+    the send at. ``raw`` holds the whole body.
     """
 
     version: int

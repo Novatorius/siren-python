@@ -27,8 +27,9 @@ The replies, in the order the checks run:
 - A tell: 200 once its function returns, or 500 when it raises, so Siren
   sends it again.
 - An ask: 200 at once. The function runs after the reply, and what it
-  returns is posted as the answer. When it returns ``None``, the app answers
-  later with ``apps.requests.answer()``.
+  returns is posted as the answer. It returns ``answers.later()`` when the
+  app will answer with ``apps.requests.answer()`` itself. An ask's function
+  that returns ``None`` is an error, which goes to ``on_error``.
 - 404 for an ``app.request`` whose kind and key have no function, so Siren
   shows the request under Needs attention once its sends run out.
 - Any other ``X-Siren-Event`` goes to the ``on_event`` function for its type:
@@ -48,6 +49,8 @@ import logging
 import threading
 import time
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from enum import Enum
 from http import HTTPStatus
 from urllib.parse import urlsplit
 from typing import (
@@ -69,8 +72,9 @@ from typing import (
 )
 
 from .apps import REQUEST_EVENT, Apps, _BodyRefused, _check_signature, _check_tolerance, _checked_answer, _header
-from .errors import SignatureVerificationError, SirenError
-from .types import AppRequest, WebhookEvent
+from ._answer_checks import siren_refusal
+from .errors import ConflictError, ErrorCode, SignatureVerificationError, SirenError, ValidationError
+from .types import APP_REQUEST_KINDS, AppRequest, WebhookEvent
 from .webhooks import _is_envelope as _is_webhook_envelope
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -130,12 +134,152 @@ def _reply(status: int, error: Optional[str] = None, *, after: Optional[Work] = 
 @dataclass(frozen=True)
 class AppSimulation:
     """What :meth:`AppRequestHandler.simulate` saw: the ``status`` and JSON
-    ``body`` the handler would reply, and for an ask, the ``answer`` it would
-    post, checked as the post checks it, or ``None``."""
+    ``body`` the handler would reply, for an ask the ``answer`` it would
+    post, and the ``error`` that would reach ``on_error``.
+
+    ``answer`` is ``None`` when nothing would be posted. ``error`` is
+    ``None`` when nothing failed. It holds what the function raised, the
+    error for an ask's function that returned ``None``, the
+    :class:`ValueError` for an answer the handler would not post, or a
+    :class:`~siren.ValidationError` with code ``app_answer_invalid`` and
+    Siren's own words for an answer Siren would refuse."""
 
     status: int
     body: Dict[str, Any]
     answer: Optional[Dict[str, Any]] = None
+    error: Optional[BaseException] = None
+
+
+class _AnswerLater:
+    """What :meth:`AppRequestHandler.later` returns."""
+
+    _instance: Optional["_AnswerLater"] = None
+
+    def __new__(cls) -> "_AnswerLater":
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    def __repr__(self) -> str:
+        return "answers.later()"
+
+
+_LATER = _AnswerLater()
+
+
+# The kinds on() takes ---------------------------------------------------------
+
+#: Each kind's name on Siren Cloud's screens (Siren feat/apps,
+#: frontend/src/platform/saas/apps/apps.ts, APP_KINDS), for the words that
+#: refuse a name that is not a kind.
+_SCREEN_NAMES: Tuple[Tuple[str, str], ...] = (
+    ("postConversionAction", "Post-conversion action"),
+    ("postAllocationAction", "Post-allocation action"),
+    ("payoutMethod", "Payout method"),
+    ("distributionResolver", "Distribution resolver"),
+    ("incentiveResolver", "Attribution model"),
+    ("incentiveType", "Incentive structure"),
+    ("metricCalculation", "Metric calculation"),
+    ("metricFilter", "Customer filter for distributors"),
+    ("transactionFilter", "Transaction filter"),
+    ("engagementCalculation", "Engagement calculation"),
+    ("engagementFilter", "Customer filter for programs"),
+    ("programGroupSorter", "Program group structure"),
+    ("collaboratorGroupStructure", "Collaborator group structure"),
+)
+
+
+def _squash(name: str) -> str:
+    return "".join(c for c in name.lower() if c not in " _-")
+
+
+def _edit_distance(a: str, b: str) -> int:
+    row = list(range(len(b) + 1))
+    for i, x in enumerate(a, 1):
+        previous, row[0] = row[0], i
+        for j, y in enumerate(b, 1):
+            previous, row[j] = row[j], min(row[j] + 1, row[j - 1] + 1, previous + (x != y))
+    return row[-1]
+
+
+def _kind_problem(name: str, extra: Tuple[str, ...]) -> Optional[str]:
+    """Why ``on()`` refuses a kind, in words that say what to write, or
+    ``None`` for a kind Siren sends or one in ``extra_kinds``."""
+    if name in APP_REQUEST_KINDS or name in extra:
+        return None
+    squashed = _squash(name)
+    if squashed == "customevent":
+        return "Siren never sends a custom event. Your app sends one with events.ingest()."
+    if "." in name:
+        return f"{name} is a webhook event. Register it with on_event()."
+    if squashed == "fulfillmentmethod":
+        return f"{name} is the old name. Use payoutMethod."
+    by_letters = {kind.lower(): kind for kind in APP_REQUEST_KINDS}
+    if "_" in name and squashed in by_letters:
+        return f"Kinds are camelCase, as Siren sends them: {by_letters[squashed]}."
+    for kind, screen in _SCREEN_NAMES:
+        if _squash(screen) == squashed and squashed != kind.lower():
+            return f"{screen}'s kind is {kind}."
+    near = by_letters.get(squashed)
+    if near is None:
+        distance, closest = min((_edit_distance(name, kind), kind) for kind in APP_REQUEST_KINDS)
+        near = closest if distance <= 2 else None
+    if near is not None:
+        return f"{name} is not a feature kind. Did you mean {near}?"
+    return f"{name} is not a feature kind. The kinds are: {', '.join(APP_REQUEST_KINDS)}."
+
+
+def _extra_kinds(method: str, extra_kinds: Any) -> Tuple[str, ...]:
+    if extra_kinds is None:
+        return ()
+    words = f"{method} takes extra_kinds as a list of kind names a newer Siren sends, such as ['refundPolicy']."
+    if isinstance(extra_kinds, (str, bytes)):
+        raise ValueError(words)
+    try:
+        kinds = tuple(extra_kinds)
+    except TypeError:
+        raise ValueError(words) from None
+    for kind in kinds:
+        if not isinstance(kind, str) or kind == "" or "." in kind:
+            raise ValueError(words)
+    return kinds
+
+
+# What the default on_error says happens next ---------------------------------
+
+
+def _window_close(answer_by: Optional[str]) -> Optional[str]:
+    """When an ask's answer window closes, as ``16:58 UTC``, with the date
+    when it is not today, or ``None`` when ``answerBy`` can't be read."""
+    if not isinstance(answer_by, str):
+        return None
+    text = answer_by.strip()
+    if text.endswith(("Z", "z")):
+        text = text[:-1] + "+00:00"
+    try:
+        closes = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if closes.tzinfo is None:
+        closes = closes.replace(tzinfo=timezone.utc)
+    closes = closes.astimezone(timezone.utc)
+    if closes.date() == datetime.now(timezone.utc).date():
+        return closes.strftime("%H:%M UTC")
+    return closes.strftime("%Y-%m-%d %H:%M UTC")
+
+
+def _next_send(error: BaseException, request: AppRequest, mode: str) -> str:
+    """What Siren does next with a request whose function failed."""
+    if mode == "tell":
+        return "Siren sends it again in about a minute."
+    if isinstance(error, ConflictError):
+        return ""  # Answered or dropped: Siren sends it no more.
+    closes = _window_close(request.answer_by)
+    when = f"after {closes}, when" if closes is not None else "when"
+    return (
+        f"Siren sends it again {when} its answer window closes. Resend it sooner from Needs attention "
+        f"in Siren Cloud, or with `siren apps resend {request.id}`."
+    )
 
 
 #: Siren Cloud's two public hosts, which reach the same service, so an
@@ -198,10 +342,15 @@ class AppRequestHandler:
         reply = answers(raw_body, headers, method="POST")                       # anything else
 
     A function takes the :class:`~siren.AppRequest`. A tell's return value is
-    ignored. An ask's is posted as the answer. An ``async def`` function is
-    awaited, and under ASGI a plain one runs on a worker thread. The handler
-    keeps no state, and Siren may send one request twice, so a tell's
-    function writes once by ``request.id``.
+    ignored. An ask's is posted as the answer, or the function returns
+    :meth:`later` when the app will answer with ``apps.requests.answer()``
+    itself. An ``async def`` function is awaited, and under ASGI a plain one
+    runs on a worker thread.
+
+    The handler keeps no state. Siren may send one request more than once,
+    and sends an unanswered ask again when its answer window closes, so
+    every function writes once by ``request.id``, the same on every send,
+    and an ask's function returns the same answer each time.
     """
 
     def __init__(
@@ -212,6 +361,7 @@ class AppRequestHandler:
         tolerance_seconds: Optional[int] = None,
         run_later: Optional[Callable[[Work], Any]] = None,
         on_error: Optional[Callable[..., Any]] = None,
+        extra_kinds: Optional[Iterable[str]] = None,
     ) -> None:
         method = "apps.request_handler()"
         if not isinstance(signing_secret, str) or signing_secret == "":
@@ -225,6 +375,7 @@ class AppRequestHandler:
         self._tolerance = _check_tolerance(method, tolerance_seconds)
         self._run_later = run_later
         self._on_error = on_error
+        self._extra_kinds = _extra_kinds(method, extra_kinds)
         self._functions: Dict[Tuple[str, Optional[str]], Callable[[Any], Any]] = {}
         self._events: Dict[str, Callable[[Any], Any]] = {}
         self.wsgi = _Wsgi(self)
@@ -251,13 +402,25 @@ class AppRequestHandler:
         return the handler, so calls chain. A function for the key wins over
         one for the kind.
 
-        Raises :class:`ValueError` for an empty kind or key, a function that
-        is not callable, and a second function for the same kind and key.
+        ``kind`` is one of :data:`~siren.APP_REQUEST_KINDS`, as text or an
+        :class:`~siren.AppItemKind`, or a kind in the handler's
+        ``extra_kinds``. Any other name is refused at once with words that
+        say what to write, such as "distributionResolvr is not a feature
+        kind. Did you mean distributionResolver?"
+
+        Raises :class:`ValueError` for a kind Siren never sends, an empty
+        key, a function that is not callable, and a second function for the
+        same kind and key.
         """
         if fn is None and callable(key):
             key, fn = None, key
+        if isinstance(kind, Enum):
+            kind = kind.value
         if not isinstance(kind, str) or kind == "":
             raise ValueError("answers.on() needs the feature's kind, such as 'distributionResolver'.")
+        problem = _kind_problem(kind, self._extra_kinds)
+        if problem is not None:
+            raise ValueError(problem)
         if key is not None and (not isinstance(key, str) or key == ""):
             raise ValueError("answers.on() takes the feature's key as text, such as 'split-by-score', or no key for every feature of the kind.")
 
@@ -302,6 +465,14 @@ class AppRequestHandler:
         register(fn)
         return self
 
+    def later(self) -> Any:
+        """What an ask's function returns when the app will answer by itself
+        with ``apps.requests.answer()``, such as after a queue or a person
+        decides. The handler posts nothing for it. Returning ``None`` from an
+        ask's function is an error instead, so a forgotten ``return`` shows
+        in ``on_error``."""
+        return _LATER
+
     # The plain call --------------------------------------------------------
 
     def __call__(self, raw_body: Any, headers: Any, method: str = "POST") -> AppRequestReply:
@@ -324,22 +495,61 @@ class AppRequestHandler:
         or anything with ``method``, ``headers`` and ``raw_body``.
 
         Every check runs as for a real request, and the result holds the
-        reply's ``status`` and ``body``. For an ask, ``answer`` holds what
-        the function returned, checked as the post checks it. A refused
-        request, including an ask from another Siren, shows as its status.
-        When the function raises, ``simulate`` raises the same error, and an
-        answer the handler would not post raises :class:`ValueError`. An
+        reply's ``status`` and ``body``. A refused request, including an ask
+        from another Siren, shows as its status. For an ask, ``answer``
+        holds what the function returned, checked as the post checks it and
+        then as Siren's answer route checks it, rule for rule.
+
+        A failure comes back in ``error``, never raised: what the function
+        raised, an ask's function that returned ``None``, an answer the
+        handler would not post, and an answer Siren would refuse, as a
+        :class:`~siren.ValidationError` with code ``app_answer_invalid`` and
+        Siren's words. A tell's failure has the 500 its reply would have. An
         ``async def`` function is run to the end.
+
+        Raises :class:`TypeError` when ``request`` is not a request.
         """
+        if not hasattr(request, "raw_body") or not hasattr(request, "headers"):
+            raise TypeError(
+                "answers.simulate() takes a request from siren.testing.app_request(), "
+                "or anything with method, headers and raw_body."
+            )
         checked = self._check(getattr(request, "method", "POST"), request.raw_body, request.headers)
         if isinstance(checked, AppRequestReply):
             return AppSimulation(checked.status, checked.body)
-        returned = _call(checked.fn, checked.subject)
-        if checked.mode != "ask" or returned is None:
+        try:
+            returned = _call(checked.fn, checked.subject)
+        except Exception as error:
+            if checked.mode == "ask":
+                return AppSimulation(200, {}, None, error)
+            return AppSimulation(500, {"error": checked.failed}, None, error)
+        if checked.mode != "ask" or returned is _LATER:
             return AppSimulation(200, {})
-        assert isinstance(checked.subject, AppRequest)
-        answer = _checked_answer(f"The function for {checked.label}", checked.subject.id, returned)
+        asked = checked.subject
+        assert isinstance(asked, AppRequest)
+        if returned is None:
+            return AppSimulation(200, {}, None, self._returned_nothing(checked))
+        try:
+            answer = _checked_answer(f"The function for {checked.label}", asked.id, returned)
+        except ValueError as error:
+            return AppSimulation(200, {}, None, error)
+        refusal = siren_refusal(asked.item["kind"], asked.data, answer)
+        if refusal is not None:
+            invalid = ValidationError(
+                refusal,
+                code=ErrorCode.APP_ANSWER_INVALID,
+                status_code=422,
+                data={"error": {"code": ErrorCode.APP_ANSWER_INVALID, "message": refusal}},
+            )
+            return AppSimulation(200, {}, None, invalid)
         return AppSimulation(200, {}, answer)
+
+    @staticmethod
+    def _returned_nothing(run: "_Run") -> SirenError:
+        return SirenError(
+            f"The function for {run.label} returned nothing. Return the answer, "
+            "or return answers.later() when you will answer with apps.requests.answer()."
+        )
 
     # The core --------------------------------------------------------------
 
@@ -352,7 +562,7 @@ class AppRequestHandler:
         try:
             _call(checked.fn, checked.subject)
         except Exception as error:
-            self._report(error, checked.subject)
+            self._report(error, checked.subject, checked.mode)
             return _reply(500, checked.failed)
         return _reply(200)
 
@@ -437,7 +647,7 @@ class AppRequestHandler:
         try:
             answer = _call(run.fn, run.subject)
         except Exception as error:
-            self._report(error, run.subject)
+            self._report(error, run.subject, "ask")
             return
         self._post(run, answer)
 
@@ -445,22 +655,25 @@ class AppRequestHandler:
         try:
             answer = await _call_async(run.fn, run.subject)
         except Exception as error:
-            self._report(error, run.subject)
+            self._report(error, run.subject, "ask")
             return
         await asyncio.to_thread(self._post, run, answer)
 
     def _post(self, run: _Run, answer: Any) -> None:
-        if answer is None:
+        if answer is _LATER:
             return
         request = run.subject
         assert isinstance(request, AppRequest)
+        if answer is None:
+            self._report(self._returned_nothing(run), request, "ask")
+            return
         try:
             # Retried on a lost connection, 429 and 5xx, since the same bytes
             # go each time and Siren takes the same answer again as a
             # duplicate. A refusal is never resent.
             self._requests._send(f"The function for {run.label}", request.id, answer, retryable=True)
         except Exception as error:
-            self._report(error, request)
+            self._report(error, request, "ask")
 
     def _hand_off(self, work: Work, subject: Optional[Subject], default: Optional[Callable[[Work], None]] = None) -> None:
         """Gives an ask's work to ``run_later``, or to the face's default."""
@@ -474,10 +687,19 @@ class AppRequestHandler:
         except Exception as error:
             self._report(error, subject)
 
-    def _report(self, error: BaseException, subject: Optional[Subject]) -> None:
+    def _report(self, error: BaseException, subject: Optional[Subject], mode: Optional[str] = None) -> None:
+        """Hands a failure to ``on_error``, or logs it. A failed tell's or
+        ask's line says when Siren sends the request again."""
         try:
             if self._on_error is not None:
                 self._on_error(error, subject)
+            elif isinstance(subject, AppRequest) and mode in ("tell", "ask"):
+                words = str(error) or type(error).__name__
+                if not words.endswith((".", "!", "?")):
+                    words += "."
+                after = _next_send(error, subject, mode)
+                line = f"Siren request handler ({subject.item['kind']} {subject.item['key']} {subject.id}): {words}"
+                logger.error("%s", f"{line} {after}" if after else line, exc_info=error)
             else:
                 logger.error("Siren request handler: %s", error, exc_info=error)
         except Exception:
@@ -655,7 +877,7 @@ class _Asgi:
                 await _call_async(checked.fn, checked.subject)
                 reply = _reply(200)
             except Exception as error:
-                handler._report(error, checked.subject)
+                handler._report(error, checked.subject, checked.mode)
                 reply = _reply(500, checked.failed)
 
         data = reply.content

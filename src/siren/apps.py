@@ -284,6 +284,7 @@ class Apps:
         tolerance_seconds: Optional[int] = None,
         run_later: Optional[Callable[[Callable[[], None]], Any]] = None,
         on_error: Optional[Callable[..., Any]] = None,
+        extra_kinds: Optional[Iterable[str]] = None,
     ) -> "AppRequestHandler":
         """One address for everything Siren sends the app: it checks each
         request as :meth:`verify_request` does, runs the function registered
@@ -298,11 +299,16 @@ class Apps:
         ``run_later`` is handed an ask's work, a callable with no arguments,
         in place of running it after the reply, for a host that stops work
         once it has replied. ``on_error(error, request)`` gets every failure
-        the reply can't show. It logs to the ``siren`` logger by default.
+        the reply can't show. It logs to the ``siren`` logger by default,
+        with a line that says when Siren sends a failed request again.
+
+        ``extra_kinds`` lists kinds a newer Siren sends that this SDK doesn't
+        know yet, for :meth:`AppRequestHandler.on` to take.
 
         Raises :class:`ValueError` for no secret, a tolerance outside 1
-        to :data:`MAX_TOLERANCE_SECONDS`, and a ``run_later`` or ``on_error``
-        that is not callable.
+        to :data:`MAX_TOLERANCE_SECONDS`, a ``run_later`` or ``on_error``
+        that is not callable, and an ``extra_kinds`` that is not a list of
+        kind names.
         """
         from .app_requests import AppRequestHandler
 
@@ -319,6 +325,7 @@ class Apps:
             tolerance_seconds=tolerance_seconds,
             run_later=run_later,
             on_error=on_error,
+            extra_kinds=extra_kinds,
         )
 
     @staticmethod

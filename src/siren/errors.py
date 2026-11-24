@@ -40,6 +40,12 @@ class ErrorCode:
     #: :class:`AuthenticationError`.
     APP_ANSWER_UNAUTHORIZED = "app_answer_unauthorized"
 
+    #: 422: Siren refused an answer that doesn't fit its request, with one
+    #: sentence that says why. The request handler's ``simulate()`` gives
+    #: the same code and words for an answer Siren would refuse.
+    #: :class:`ValidationError`.
+    APP_ANSWER_INVALID = "app_answer_invalid"
+
 
 class SirenError(Exception):
     """Base class for every error raised by the Siren SDK."""

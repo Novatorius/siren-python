@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Breaking
+
+- The request handler's `on()` refuses a kind Siren never sends, at once,
+  with a `ValueError` that says what to write: a near miss gets "Did you
+  mean distributionResolver?", a screen name such as `attributionModel` gets
+  its kind, snake_case gets the camelCase kind, `customEvent` points at
+  `events.ingest()`, a webhook event's name points at `on_event()`, and
+  `fulfillmentMethod` points at `payoutMethod`. A kind a newer Siren sends
+  goes in the handler's new `extra_kinds` option.
+- An ask's function that returns `None` is an error. `on_error` gets a
+  `SirenError` that says so and nothing is posted. A function that will
+  answer by itself with `apps.requests.answer()` returns `answers.later()`.
+- `simulate()` returns a failure in the result's new `error` field and never
+  raises for one: what the function raised, an ask's function that returned
+  nothing, an answer the handler would not post (`ValueError`), and an answer
+  Siren would refuse. A tell whose function raises shows its 500. Something
+  that is not a request still raises `TypeError`.
+
 ### Added
 
 - `siren.testing`, to try a request handler without Siren. `app_request(kind,
@@ -136,8 +154,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `outcome`, and one over 16384 bytes of JSON, and gives Siren's uncoded 401
   the code `ErrorCode.APP_ANSWER_UNAUTHORIZED`.
 
+- `simulate()` checks an ask's answer the way Siren's answer route does,
+  each kind's rules ported from Siren with the Siren file and method beside
+  each one: the 16384-byte limit as Siren measures it, a share for every
+  metric of the question, no share or reward above the pool, whole currency
+  steps, ids that were in the question and each only once, every member in a
+  chain or tree with no cycle, and the payout and filter text limits. An
+  answer Siren would refuse comes back as a `ValidationError` with code
+  `app_answer_invalid` (now `ErrorCode.APP_ANSWER_INVALID`) and Siren's own
+  words. The live handler still posts and leaves the refusal to Siren.
+- `siren.APP_REQUEST_KINDS`, the 13 kinds Siren sends, in Siren's order. A
+  test holds it equal to Siren's request fixture.
+- `answers.later()`, what an ask's function returns when the app answers by
+  itself.
+
 ### Changed
 
+- The default `on_error` line names the kind, key and request id, and says
+  when Siren sends a failed request again. For an ask, that is when its
+  answer window closes, with the time from `answerBy` and how to resend it
+  sooner, from Needs attention or with `siren apps resend <id>`. For a tell,
+  it is about a minute. A 409 says nothing about a next send, since none
+  comes.
+- `on()` takes an `AppItemKind` member as well as its text.
+- The README opens with "How Siren talks to your app", the same six lines
+  as the Node and PHP READMEs. It says an ask's function can run more than
+  once and must return the same answer each time, and its reply table gains
+  "When your function fails". `AppRequest`'s docstring names `id` as the id
+  to write once by, beside the feature's `item["id"]` and the per-send
+  `delivery_id`.
 - A signed body that is not an app request of version 1 gets a 400, and a
   `SignatureVerificationError` from `apps.verify_request()`, whose words name
   the first field that fails and its rule, such as "The request's `id` must

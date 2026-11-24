@@ -307,7 +307,18 @@ class TestRow6Ask:
         assert json.loads(route.calls[0].request.content) == contract("distributionResolver")["answer"]
         assert errors.seen == []
 
-    def test_a_function_that_returns_nothing_posts_nothing(self, app_client, errors, siren_api):
+    def test_a_function_that_returns_later_posts_nothing(self, app_client, errors, siren_api):
+        route = siren_api.post(ANSWER_PATH).respond(200, json={"status": "accepted"})
+        answers = handler(app_client, errors)
+        answers.on("incentiveResolver", "split-the-reward", lambda request: answers.later())
+        body = body_of("incentiveResolver")
+
+        reply = answers(body, sign(body))
+        reply.after()
+
+        assert reply.status == 200 and not route.called and errors.seen == []
+
+    def test_a_function_that_returns_nothing_posts_nothing_and_reports_it(self, app_client, errors, siren_api):
         route = siren_api.post(ANSWER_PATH).respond(200, json={"status": "accepted"})
         answers = handler(app_client, errors).on("incentiveResolver", "split-the-reward", lambda request: None)
         body = body_of("incentiveResolver")
@@ -315,7 +326,9 @@ class TestRow6Ask:
         reply = answers(body, sign(body))
         reply.after()
 
-        assert reply.status == 200 and not route.called and errors.seen == []
+        assert reply.status == 200 and not route.called
+        [(error, _)] = errors.seen
+        assert "split-the-reward returned nothing" in str(error)
 
     def test_an_async_function_is_awaited_after_the_reply(self, app_client, errors, siren_api):
         route = siren_api.post(ANSWER_PATH).respond(200, json={"status": "accepted"})

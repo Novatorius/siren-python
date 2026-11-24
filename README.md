@@ -7,6 +7,15 @@ Answer Siren Cloud from your own app with one request handler, and record sales,
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 [![Python versions](https://img.shields.io/pypi/pyversions/siren-sdk.svg)](https://pypi.org/project/siren-sdk/)
 
+## How Siren talks to your app
+
+- **An app** is your own code that works with Siren. It holds a key, which it calls Siren with, and an address, where Siren sends it signed requests.
+- **The signing secret** belongs to the address. Siren signs every request with it, and the handler checks each one.
+- **A feature** is what the app adds to one of Siren's pickers. Its kind says what it does, such as `distributionResolver`, and its key names it in your app.
+- **A tell** lets the app know something happened, such as an approved conversion. The handler runs your function and replies 200.
+- **An ask** needs an answer, and the work it's about waits for it. The handler replies 200 at once, runs your function and posts what it returns.
+- **A custom event** goes the other way: the app sends it to Siren.
+
 ## What you can do
 
 - Answer Siren Cloud from your own app with one request handler
@@ -105,7 +114,16 @@ Each kind of feature changes only the function, as
 `siren.AppRequest`: `request.id` is the request key, the same on every send,
 `request.data` is the question, `request.item` holds the feature's `kind` and
 `key`, and `request.answer_by` is when Siren wants an ask's answer. A tell's
-function returns nothing. An ask's function returns the answer.
+function returns nothing. An ask's function returns the answer, or
+`answers.later()` when the app will answer by itself with
+`apps.requests.answer()`. An ask's function that returns nothing is an error,
+which goes to `on_error`, so a forgotten `return` shows in the log.
+
+Siren may send a tell twice, which is why the function above writes once by
+`request.id`. An ask's function can run more than once for one request too:
+on a repeat delivery, and again on each send after its answer window closes.
+Write once by `request.id` and return the same answer each time. Siren takes
+the same answer again as a duplicate and refuses a different one with 409.
 
 ### Try it without Siren
 
@@ -113,8 +131,11 @@ function returns nothing. An ask's function returns the answer.
 kind's sample question from Siren's own fixtures. The handler's `simulate()`
 runs it through every check and the function, and hands back the reply's
 `status` and `body` and, for an ask, the `answer` it would post. It posts
-nothing. When the function raises, or returns an answer the handler would not
-post, `simulate()` raises that error, so a test shows the traceback.
+nothing. It checks an ask's answer the way Siren's answer route does, rule
+for rule, so an answer Siren would refuse comes back as an `error` with code
+`app_answer_invalid` and Siren's own words. `error` also holds what the
+function raised, or the error for an ask's function that returned nothing.
+`simulate()` never raises for a failed function, so assert on `result.error`.
 
 In a pytest file beside the app, with `SIREN_SIGNING_SECRET` set as for the
 app, and the distribution resolver from
@@ -134,6 +155,7 @@ def test_tells_the_crm():
 def test_splits_by_score():
     question = sample_data("distributionResolver")  # change it to try an edge case
     result = answers.simulate(app_request("distributionResolver", "split-by-score", data=question))
+    assert result.error is None
     assert result.answer["shares"] == {"41": 6000, "43": 4000}
 ```
 
@@ -211,6 +233,14 @@ A function for the key wins over one for the kind. An `async def` function is
 awaited, and under ASGI a plain one runs on a worker thread. An `on_event`
 function gets a `siren.WebhookEvent`.
 
+`on` takes the 13 kinds Siren sends, listed in `siren.APP_REQUEST_KINDS`, and
+refuses any other name at once with a `ValueError` that says what to write.
+`on("distributionResolvr", split)` raises "distributionResolvr is not a
+feature kind. Did you mean distributionResolver?" A screen name, snake_case,
+`customEvent`, a webhook event's name and the old `fulfillmentMethod` each get
+their own pointer, so a typo fails when the app starts, not as 404s for
+hours.
+
 ### Options
 
 `request_handler(signing_secret=None, *, tolerance_seconds, run_later, on_error)`
@@ -223,7 +253,10 @@ options:
   place of running it after the reply. Pass it on a host that stops work once
   it has replied, such as a function host, or to send the work to a queue.
 - `on_error(error, request)` gets every failure the reply can't show, such as
-  an answer Siren refused. By default it logs to the `siren` logger.
+  an answer Siren refused. By default it logs to the `siren` logger, with a
+  line that says when Siren sends the request again.
+- `extra_kinds` lists kinds a newer Siren sends that this SDK doesn't know
+  yet, such as `["refundPolicy"]`, for `on` to take.
 
 <!-- readme-test: options -->
 ```python
@@ -271,7 +304,8 @@ replies:
 | A signed body that is not JSON, or not an app request of version 1 | 400, naming the first field that fails, such as "The request's `id` must be `apr_` followed by 32 lowercase hex characters." |
 | An ask whose `answerUrl` is on another Siren than the client's `base_url` | 500, and `on_error` gets a `SirenError` naming both addresses and the `base_url` to set |
 | A tell with a function | 200 once the function returns, 500 when it raises, so Siren sends it again |
-| An ask with a function | 200 at once. The function runs after the reply, and the handler posts what it returns |
+| An ask with a function | 200 at once. The function runs after the reply, and the handler posts what it returns, or nothing for `answers.later()` |
+| When your function fails | A tell gets 500, and Siren tries again about 1, 2, 4 and 8 minutes later. An ask already got its 200, so Siren sends it again when its answer window closes, 60 minutes by default, and you can resend it sooner from Needs attention or with `siren apps resend <id>` |
 | A kind and key with no function | 404 `No function handles <kind> <key>.`, so Siren shows the request under Needs attention once its sends run out |
 | Another `X-Siren-Event`, such as `conversion.approved` | 200 once the `on_event` function returns, 500 when it raises, and 200 when there is none |
 
@@ -289,8 +323,9 @@ question below is the `data` Siren sends in a request, and every function
 runs inside the handler of [Answer Siren in a few lines](#answer-siren-in-a-few-lines).
 
 Siren checks each answer against its kind and refuses one that doesn't fit
-with 422 `app_answer_invalid` and the reason. The SDK checks only what every
-answer needs. An ask that gets no answer is sent again, three sends in all,
+with 422 `app_answer_invalid` and the reason. Before posting, the handler
+checks only what every answer needs. `simulate()` runs Siren's own check for
+each kind as well, so a test sees the refusal first. An ask that gets no answer is sent again, three sends in all,
 and then needs attention, as [Errors and retries](#errors-and-retries)
 explains, along with how long each kind waits.
 
@@ -974,7 +1009,7 @@ The [examples](examples) folder holds each of these as a file.
 An app that queues the work, or answers after a person decides, checks a
 request with `apps.verify_request()` and answers an ask with
 `apps.requests.answer()`. The handler calls both inside, and an ask's
-function that returns `None` leaves its answer to this path.
+function that returns `answers.later()` leaves its answer to this path.
 
 <!-- readme-test: by-hand -->
 ```python
@@ -1025,7 +1060,12 @@ What happens to an ask's answer after the handler's 200:
   that doesn't fit the kind with 422 `app_answer_invalid`, a different second
   answer with 409 `app_request_already_answered`, and a late answer with 409
   `app_request_dropped`.
-- A function that raises goes to `on_error`, and nothing is posted.
+- A function that raises goes to `on_error`, and nothing is posted. So does
+  an ask's function that returns nothing.
+- Siren sends a failed ask again only when its answer window closes. The
+  default `on_error` line says when, such as "Siren sends it again after
+  16:58 UTC, when its answer window closes. Resend it sooner from Needs
+  attention in Siren Cloud, or with `siren apps resend apr_b339...`."
 
 What Siren does when an app doesn't answer:
 
