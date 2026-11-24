@@ -44,7 +44,7 @@ def test_the_fixture_verifies_and_parses(client, signed):
     assert request.id == REQUEST_ID
     assert request.mode == "ask" and request.is_ask
     assert request.app == "acme-payouts"
-    assert request.item == {"kind": "payoutMethod", "key": "acme-ledger", "id": "app:12"}
+    assert request.feature == {"kind": "payoutMethod", "key": "acme-ledger", "id": "app:12"}
     assert request.data == {"payoutId": 88, "amount": 2500, "currency": "USD"}
     assert request.answer_by == "2026-11-18T09:14:03+00:00"
     assert request.answer_url == f"https://api.siren.test/siren/v1/apps/requests/{REQUEST_ID}/answer"
@@ -156,7 +156,7 @@ def _without(key: str) -> dict:
         {**_good_envelope(), "id": "apr_123"},
         {**_good_envelope(), "type": "conversion.approved"},
         {**_good_envelope(), "app": ""},
-        {**_good_envelope(), "item": {"key": "k", "id": "app:1"}},
+        {**_good_envelope(), "feature": {"key": "k", "id": "app:1"}},
         {**_good_envelope(), "data": [1, 2]},
         {**_good_envelope(), "mode": "maybe"},
         _without("answerUrl"),

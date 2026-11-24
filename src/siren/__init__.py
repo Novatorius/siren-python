@@ -15,6 +15,7 @@ Quickstart::
 
 from ._version import __version__
 from .app_requests import AppRequestHandler, AppRequestReply, AppSimulation
+from .apps import AppFeatures
 from .browser_tokens import BrowserTokenHandler
 from .client import Siren
 from .errors import (
@@ -67,9 +68,13 @@ from .types import (
     AppIncentiveTypeEngagement,
     AppIncentiveTypeNoneAnswer,
     AppIncentiveTypeQuestion,
+    APP_KINDS,
     APP_REQUEST_KINDS,
-    AppItemKind,
+    AppFeature,
     AppRequest,
+    AppRequestFeature,
+    FeatureKind,
+    RemovedAppFeature,
     AppRewardAnswer,
     AppRewardConversion,
     AppRewardQuestion,
@@ -155,7 +160,12 @@ __all__ = [
     "AppIncentiveTypeNoneAnswer",
     "AppIncentiveTypeQuestion",
     "APP_REQUEST_KINDS",
-    "AppItemKind",
+    "FeatureKind",
+    "AppFeature",
+    "AppRequestFeature",
+    "RemovedAppFeature",
+    "APP_KINDS",
+    "AppFeatures",
     "AppRequest",
     "AppRewardAnswer",
     "AppRewardConversion",

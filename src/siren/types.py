@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import Path
 from typing import Any, Dict, Iterator, List, Literal, Optional, Tuple, TypedDict, Union
 
 
@@ -124,9 +126,12 @@ class WebhookEvent:
     raw: Dict[str, Any] = field(default_factory=dict)
 
 
-class AppItemKind(str, Enum):
-    """The kinds of feature an app can add, as Siren stores an item's
-    ``kind`` and sends it in an app request's ``item["kind"]``.
+class FeatureKind(str, Enum):
+    """The kinds of feature an app can add, as Siren stores a feature's
+    ``kind`` and sends it in an app request's ``feature["kind"]``. Each
+    member's docs give the name Siren Cloud's screens show, from the kind
+    snapshot the SDK ships (``app_kinds.json``), and Siren's own term where
+    it differs.
 
     A metric calculation (``METRIC_CALCULATION``) answers
     ``{"outcome": "scores", "results": [{"collaboratorId": 7, "score": 10}]}``.
@@ -184,45 +189,151 @@ class AppItemKind(str, Enum):
     or ``None`` for a top member, and no cycle.
     """
 
+    # Generated from app_kinds.json by scripts/feature_kinds.py. Do not edit.
     POST_CONVERSION_ACTION = "postConversionAction"
+    """Post-conversion action. Siren tells the app when a conversion is
+    approved in a program that picks this action.
+    """
+
     POST_ALLOCATION_ACTION = "postAllocationAction"
+    """Post-allocation action. Siren tells the app when an allocation completes
+    for a distributor that picks this action.
+    """
+
     PAYOUT_METHOD = "payoutMethod"
+    """Payout method. Siren asks the app to pay a payout, in the currencies it
+    names, when an autofulfiller picks this method.
+    """
+
     DISTRIBUTION_RESOLVER = "distributionResolver"
+    """Distribution resolver. Siren asks the app how to divide a distribution's
+    pool when its distributor picks this resolver.
+    """
+
     CUSTOM_EVENT = "customEvent"
+    """Custom event. The app sends Siren an event of its own at /event/{key},
+    with a short-lived token its key gets. Programs and distributors can
+    credit it.
+    """
+
     METRIC_CALCULATION = "metricCalculation"
+    """Metric calculation. Siren's own term is calculation strategy. Siren asks
+    the app who scores, and how much, each time a metric triggers for a
+    distributor whose metric type picks this calculation.
+    """
+
     METRIC_FILTER = "metricFilter"
+    """Customer filter for distributors. Siren's own term is metric filter.
+    Siren asks the app whether a metric may score each time one triggers for
+    a distributor that picks this filter.
+    """
+
     INCENTIVE_RESOLVER = "incentiveResolver"
-    INCENTIVE_TYPE = "incentiveType"
-    ENGAGEMENT_CALCULATION = "engagementCalculation"
-    ENGAGEMENT_FILTER = "engagementFilter"
-    PROGRAM_GROUP_SORTER = "programGroupSorter"
+    """Attribution model. Siren's own term is incentive resolver. Siren asks
+    the app how to split a program's reward among the collaborators a sale
+    or lead converted, when the program picks this resolver.
+    """
+
     TRANSACTION_FILTER = "transactionFilter"
+    """Transaction filter. Siren's own term is transaction compiler. Siren asks
+    the app which of a sale's lines count, once per sale for each program or
+    distributor that picks this filter.
+    """
+
+    INCENTIVE_TYPE = "incentiveType"
+    """Incentive structure. Siren's own term is incentive type. Siren asks the
+    app which engagements a sale, lead or renewal converts on a program that
+    picks this structure, and the reward pool they share.
+    """
+
+    ENGAGEMENT_CALCULATION = "engagementCalculation"
+    """Engagement calculation. Siren's own term is calculation strategy. Siren
+    asks the app who earns an engagement, and its score, each time one
+    triggers for a program whose engagement type picks this calculation.
+    """
+
+    ENGAGEMENT_FILTER = "engagementFilter"
+    """Customer filter for programs. Siren's own term is engagement filter.
+    Siren asks the app whether an engagement may be written each time one
+    triggers for a program that picks this filter.
+    """
+
+    PROGRAM_GROUP_SORTER = "programGroupSorter"
+    """Program group structure. Siren's own term is group sorter. Siren asks
+    the app which program of a program group a sale or lead tries first,
+    when the group picks this structure.
+    """
+
     COLLABORATOR_GROUP_STRUCTURE = "collaboratorGroupStructure"
+    """Collaborator group structure. Siren asks the app who sits above and
+    below whom in a collaborator group each time a cascade runs over a group
+    that picks this structure.
+    """
+    # End of the generated members.
 
     def __str__(self) -> str:
         return self.value
 
 
-#: The 13 kinds Siren sends an app a request for, in Siren's order (Siren
-#: feat/apps, frontend/src/platform/saas/apps/apps.ts, ``APP_KINDS``). The
-#: request handler's ``on()`` takes these, and the kinds in its
-#: ``extra_kinds`` option. ``customEvent`` is not one: the app sends a custom
-#: event, and Siren never sends one.
-APP_REQUEST_KINDS: Tuple[str, ...] = (
-    "postConversionAction",
-    "postAllocationAction",
-    "payoutMethod",
-    "distributionResolver",
-    "incentiveResolver",
-    "incentiveType",
-    "metricCalculation",
-    "metricFilter",
-    "transactionFilter",
-    "engagementCalculation",
-    "engagementFilter",
-    "programGroupSorter",
-    "collaboratorGroupStructure",
+#: Siren's kind registry, as the snapshot the SDK ships holds it (Siren
+#: docs/api/app-kinds.json, ``AppItemKindCatalog::catalog()``): each kind's
+#: ``kind``, ``term``, ``name``, ``description``, ``mode`` and ``direction``,
+#: in the order of Siren's "New feature" chooser.
+APP_KINDS: Tuple[Dict[str, str], ...] = tuple(
+    json.loads((Path(__file__).parent / "app_kinds.json").read_text(encoding="utf-8"))
 )
+
+#: The 13 kinds Siren sends an app a request for, every kind of the snapshot
+#: whose mode is ``tell`` or ``ask``, in its order. The request handler's
+#: ``on()`` takes these, and the kinds in its ``extra_kinds`` option.
+#: ``customEvent`` is not one: the app sends a custom event, and Siren never
+#: sends one.
+APP_REQUEST_KINDS: Tuple[str, ...] = tuple(entry["kind"] for entry in APP_KINDS if entry["mode"] in ("tell", "ask"))
+
+
+class AppFeature(TypedDict, total=False):
+    """One of an app's features, as ``/apps/{app}/features`` answers it.
+    ``uses``, ``usedBy`` and ``openRequests`` come with one feature's
+    routes, and on ``GET /apps/{key}`` for a person who may change the
+    app."""
+
+    id: int
+    ref: str
+    appId: int
+    kind: str
+    key: str
+    name: str
+    description: Optional[str]
+    settings: Dict[str, Any]
+    status: str
+    dateCreated: str
+    dateModified: str
+    eventTypeId: Optional[int]
+    entitled: bool
+    requiredCapability: Optional[str]
+    requiredPlan: Optional[str]
+    uses: int
+    usedBy: List[Dict[str, Any]]
+    openRequests: int
+
+
+class RemovedAppFeature(TypedDict):
+    """What ``apps.features.delete()`` returns: ``archived`` is ``True``
+    with the feature when a record still picks it, and ``False`` with
+    ``None`` when Siren deleted it."""
+
+    archived: bool
+    feature: Optional[AppFeature]
+
+
+class AppRequestFeature(TypedDict):
+    """The feature a request is for, as its envelope's ``feature`` holds it:
+    the ``kind``, the app's own ``key`` for it, and its ``id``,
+    ``app:{n}``."""
+
+    kind: str
+    key: str
+    id: str
 
 
 @dataclass(frozen=True)
@@ -235,13 +346,13 @@ class AppRequest:
     - ``id`` is the request's own id, ``apr_`` and 32 hex characters, the
       same on every send of this request. Siren may send one request more
       than once, so write once by ``id``.
-    - ``item["id"]`` names the feature, ``app:{n}``, the same for every
+    - ``feature["id"]`` names the feature, ``app:{n}``, the same for every
       request to it.
     - ``delivery_id`` is the ``X-Siren-Delivery`` header, which names one
       delivery and changes on every send.
 
     ``mode`` is ``tell``, which waits for no answer, or ``ask``, answered by
-    ``answer_by``. ``item`` holds the feature's ``kind``, ``key`` and ``id``.
+    ``answer_by``. ``feature`` holds the feature's ``kind``, ``key`` and ``id``.
     ``data`` is the question. ``timestamp`` is the Unix time Siren signed
     the send at. ``raw`` holds the whole body.
     """
@@ -251,7 +362,7 @@ class AppRequest:
     type: str
     mode: str
     app: str
-    item: Dict[str, Any]
+    feature: AppRequestFeature
     created_at: str
     answer_by: Optional[str]
     answer_url: Optional[str]

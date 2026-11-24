@@ -76,7 +76,7 @@ def sample(kind: str) -> str:
 
 def test_every_kind_siren_offers_has_a_section():
     assert sorted(KINDS) == sorted(CONTRACTS["kinds"])
-    assert {kind.value for kind in siren.AppItemKind} - set(KINDS) == {"customEvent"}
+    assert {kind.value for kind in siren.FeatureKind} - set(KINDS) == {"customEvent"}
 
 
 def test_the_first_sample_holds_the_post_conversion_function():
@@ -110,7 +110,7 @@ def signed_delivery(kind: str):
     request = CONTRACTS["kinds"][kind]["request"]
     signed = testing.app_request(
         kind,
-        request["item"]["key"],
+        request["feature"]["key"],
         data=request["data"],
         secret=SECRET,
         id=CONTRACTS["requestKey"],

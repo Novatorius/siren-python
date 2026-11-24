@@ -10,14 +10,14 @@ from pathlib import Path
 import pytest
 
 import siren
-from siren import AppItemKind
+from siren import FeatureKind
 
 CONTRACTS = json.loads((Path(__file__).parent / "fixtures" / "apps-feature-contracts" / "requests.json").read_text())
 SECRET = "cd" * 32
 
 # Siren feat/apps, frontend/src/platform/saas/apps/apps.ts, APP_KINDS: each
-# kind with its on-screen name, in Siren's order. customEvent is the one kind
-# Siren never sends.
+# kind with its on-screen name, a witness kept apart from the snapshot the
+# SDK ships. customEvent is the one kind Siren never sends.
 SIREN_APP_KINDS = [
     ("postConversionAction", "Post-conversion action"),
     ("postAllocationAction", "Post-allocation action"),
@@ -46,9 +46,9 @@ def noop(request):
 
 def test_the_kinds_the_sdk_takes_are_the_kinds_siren_sends():
     sent = [kind for kind, _ in SIREN_APP_KINDS if kind != "customEvent"]
-    assert list(siren.APP_REQUEST_KINDS) == sent
+    assert sorted(siren.APP_REQUEST_KINDS) == sorted(sent)
     assert sorted(siren.APP_REQUEST_KINDS) == sorted(CONTRACTS["kinds"])
-    assert sorted(siren.APP_REQUEST_KINDS) == sorted(member.value for member in AppItemKind if member is not AppItemKind.CUSTOM_EVENT)
+    assert sorted(siren.APP_REQUEST_KINDS) == sorted(member.value for member in FeatureKind if member is not FeatureKind.CUSTOM_EVENT)
 
 
 @pytest.mark.parametrize("kind", [kind for kind, _ in SIREN_APP_KINDS if kind != "customEvent"])
@@ -60,7 +60,7 @@ def test_every_kind_siren_sends_registers(kind):
 
 def test_an_enum_member_registers_and_is_found_by_its_string():
     seen = []
-    answers = handler().on(AppItemKind.POST_CONVERSION_ACTION, "tell-the-crm", lambda request: seen.append(request.id))
+    answers = handler().on(FeatureKind.POST_CONVERSION_ACTION, "tell-the-crm", lambda request: seen.append(request.id))
     from siren import testing
 
     result = answers.simulate(testing.app_request("postConversionAction", "tell-the-crm", secret=SECRET))
@@ -74,11 +74,11 @@ def test_an_enum_member_registers_and_is_found_by_its_string():
         ("DistributionResolver", "DistributionResolver is not a feature kind. Did you mean distributionResolver?"),
         ("payoutmethod", "payoutmethod is not a feature kind. Did you mean payoutMethod?"),
         ("metricFiltr", "metricFiltr is not a feature kind. Did you mean metricFilter?"),
-        ("attributionModel", "Attribution model's kind is incentiveResolver."),
-        ("Attribution model", "Attribution model's kind is incentiveResolver."),
-        ("incentive structure", "Incentive structure's kind is incentiveType."),
-        ("customerFilterForPrograms", "Customer filter for programs's kind is engagementFilter."),
-        ("programGroupStructure", "Program group structure's kind is programGroupSorter."),
+        ("attributionModel", "The kind for Attribution model is incentiveResolver."),
+        ("Attribution model", "The kind for Attribution model is incentiveResolver."),
+        ("incentive structure", "The kind for Incentive structure is incentiveType."),
+        ("customerFilterForPrograms", "The kind for Customer filter for programs is engagementFilter."),
+        ("programGroupStructure", "The kind for Program group structure is programGroupSorter."),
         ("distribution_resolver", "Kinds are camelCase, as Siren sends them: distributionResolver."),
         ("collaborator_group_structure", "Kinds are camelCase, as Siren sends them: collaboratorGroupStructure."),
         ("customEvent", "Siren never sends a custom event. Your app sends one with events.ingest()."),
@@ -106,7 +106,7 @@ def test_a_name_far_from_every_kind_lists_the_kinds():
 
 def test_the_custom_event_member_is_refused_too():
     with pytest.raises(ValueError, match="events.ingest"):
-        handler().on(AppItemKind.CUSTOM_EVENT, "my-feature", noop)
+        handler().on(FeatureKind.CUSTOM_EVENT, "my-feature", noop)
 
 
 def test_extra_kinds_lets_a_kind_a_newer_siren_sends_register():

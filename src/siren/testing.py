@@ -31,6 +31,7 @@ from typing import Any, Dict, Mapping, Optional, Tuple
 
 from ._client import DEFAULT_BASE_URL
 from .apps import REQUEST_EVENT, _REQUEST_ID
+from .types import APP_KINDS
 
 __all__ = ["KINDS", "AppTestRequest", "app_request", "sample_data"]
 
@@ -39,7 +40,7 @@ _SAMPLES: Dict[str, Dict[str, Any]] = json.loads((Path(__file__).parent / "_samp
 #: The kinds Siren sends an app a request for, each with sample data.
 KINDS: Tuple[str, ...] = tuple(sorted(_SAMPLES))
 
-_TELLS = frozenset({"postConversionAction", "postAllocationAction"})
+_TELLS = frozenset(entry["kind"] for entry in APP_KINDS if entry["mode"] == "tell")
 
 
 @dataclass(frozen=True)
@@ -132,7 +133,7 @@ def app_request(
         "type": REQUEST_EVENT,
         "mode": "tell" if kind in _TELLS else "ask",
         "app": app,
-        "item": {"kind": kind, "key": key, "id": "app:1"},
+        "feature": {"kind": kind, "key": key, "id": "app:1"},
         "createdAt": made.isoformat(),
     }
     if body["mode"] == "ask":

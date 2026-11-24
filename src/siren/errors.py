@@ -46,6 +46,11 @@ class ErrorCode:
     #: :class:`ValidationError`.
     APP_ANSWER_INVALID = "app_answer_invalid"
 
+    #: 409: an app with features needs a key and an address, and the app
+    #: would lack one. ``error.data["missing"]`` names what it lacks. Siren
+    #: sends it to ``apps.features.create()``. :class:`ConflictError`.
+    APP_FEATURES_NEED_KEY_AND_ADDRESS = "app_features_need_key_and_address"
+
 
 class SirenError(Exception):
     """Base class for every error raised by the Siren SDK."""

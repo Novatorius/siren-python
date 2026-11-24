@@ -24,7 +24,7 @@ from siren import (
     AppCollaboratorGroupStructureDistributorQuestion,
     AppCollaboratorGroupStructureProgramQuestion,
     AppCollaboratorGroupTree,
-    AppItemKind,
+    FeatureKind,
     AppRequest,
 )
 
@@ -73,7 +73,7 @@ TREE: AppCollaboratorGroupTree = {"outcome": "structure", "shape": "tree", "pare
 
 def body_for(key: str, question: Optional[Dict[str, object]] = None) -> str:
     request = dict(CONTRACTS["kinds"]["distributionResolver"]["request"])
-    request["item"] = {"kind": "collaboratorGroupStructure", "key": key, "id": "app:11"}
+    request["feature"] = {"kind": "collaboratorGroupStructure", "key": key, "id": "app:11"}
     request["data"] = question if question is not None else QUESTION
     return json.dumps(request)
 
@@ -91,8 +91,8 @@ def sign(body: str) -> Dict[str, str]:
 
 
 def test_the_kind_is_named_with_the_value_siren_stores():
-    assert AppItemKind.COLLABORATOR_GROUP_STRUCTURE == "collaboratorGroupStructure"
-    assert "collaboratorGroupStructure" in [kind.value for kind in AppItemKind]
+    assert FeatureKind.COLLABORATOR_GROUP_STRUCTURE == "collaboratorGroupStructure"
+    assert "collaboratorGroupStructure" in [kind.value for kind in FeatureKind]
     assert siren.AppCollaboratorGroupStructureAnswer is AppCollaboratorGroupStructureAnswer
     assert siren.AppCollaboratorGroupStructureProgramQuestion is AppCollaboratorGroupStructureProgramQuestion
     assert "AppCollaboratorGroupStructureProgramQuestion" in siren.__all__

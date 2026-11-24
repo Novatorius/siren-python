@@ -9,13 +9,13 @@ from typing import List, Literal, Optional, get_type_hints
 import pytest
 
 import siren
-from siren import AppItemKind
+from siren import FeatureKind
 
 REQUEST_ID = "apr_b79943ff8ca353ce5cf5312bb3fa66c7"
 
 
 def test_the_kinds_match_the_values_siren_stores():
-    assert sorted(kind.value for kind in AppItemKind) == [
+    assert sorted(kind.value for kind in FeatureKind) == [
         "collaboratorGroupStructure",
         "customEvent",
         "distributionResolver",
@@ -31,9 +31,9 @@ def test_the_kinds_match_the_values_siren_stores():
         "programGroupSorter",
         "transactionFilter",
     ]
-    assert AppItemKind.METRIC_CALCULATION == "metricCalculation"
-    assert AppItemKind.METRIC_FILTER == "metricFilter"
-    assert siren.AppItemKind is AppItemKind
+    assert FeatureKind.METRIC_CALCULATION == "metricCalculation"
+    assert FeatureKind.METRIC_FILTER == "metricFilter"
+    assert siren.FeatureKind is FeatureKind
 
 
 @pytest.mark.parametrize(

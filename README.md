@@ -41,6 +41,8 @@ Answer Siren Cloud from your own app with one request handler, and record sales,
 - Verify signed webhook deliveries in one constant-time call (`webhooks`).
 - Read Siren's ledger and manage webhook subscriptions with an API key that
   holds the ledger and webhook scopes.
+- Add, read, change and remove an app's features with a signed-in dashboard
+  session (`apps.features`).
 - Manage API keys with a signed-in dashboard session.
 - Reconcile Siren's ledger against your own with paginated readers.
 
@@ -112,8 +114,8 @@ to the client's own address, never to one a request names.
 Each kind of feature changes only the function, as
 [Feature kinds](#feature-kinds) shows. The function gets an
 `siren.AppRequest`: `request.id` is the request key, the same on every send,
-`request.data` is the question, `request.item` holds the feature's `kind` and
-`key`, and `request.answer_by` is when Siren wants an ask's answer. A tell's
+`request.data` is the question, `request.feature` holds the feature's `kind`
+and `key`, and `request.answer_by` is when Siren wants an ask's answer. A tell's
 function returns nothing. An ask's function returns the answer, or
 `answers.later()` when the app will answer by itself with
 `apps.requests.answer()`. An ask's function that returns nothing is an error,
@@ -316,8 +318,11 @@ happens to an answer after the reply.
 ## Feature kinds
 
 Each section names a kind as Siren Cloud's screens show it, with the kind
-Siren's code and `request.item["kind"]` use beside it. `siren.AppItemKind`
-holds each kind's string. A tell tells the app something and waits only for
+Siren's code and `request.feature["kind"]` use beside it. `siren.FeatureKind`
+holds each kind's string, and each member's docs give its screen name, so
+your editor shows `FeatureKind.INCENTIVE_RESOLVER` as Attribution model.
+`siren.APP_KINDS` holds Siren's own list of the kinds, with each one's name
+and description, from the same snapshot of Siren's registry. A tell tells the app something and waits only for
 a 2xx. An ask waits for an answer, which the handler posts for you. Every
 question below is the `data` Siren sends in a request, and every function
 runs inside the handler of [Answer Siren in a few lines](#answer-siren-in-a-few-lines).
@@ -1313,6 +1318,30 @@ print(key.raw_key)  # sk_live_... — returned ONCE, cannot be retrieved later
 client.api_keys.list()      # no raw key material
 client.api_keys.revoke(key.id)
 ```
+
+### App features
+
+`apps.features` adds, reads, changes and removes one app's features through
+`/apps/{app}/features`, with a signed-in dashboard session passed as the
+client's key. A feature's kind and key never change once Siren makes it, so
+`update()` refuses them. `delete()` archives a feature a record still picks
+and returns it, and deletes one nothing picks:
+
+<!-- readme-test: features -->
+```python
+added = client.apps.features.create("acme-payouts", {
+    "kind": "distributionResolver",
+    "key": "split-by-score",
+    "name": "Split by score",
+})
+client.apps.features.update("acme-payouts", added["id"], {"name": "Split by score, then tenure"})
+removed = client.apps.features.delete("acme-payouts", added["id"])
+print(removed["archived"])  # False: no record picked it, so Siren deleted it
+```
+
+Siren answers 409 `app_features_need_key_and_address`
+(`siren.ErrorCode.APP_FEATURES_NEED_KEY_AND_ADDRESS`) when the app lacks a key
+or an address, since it asks the app at its address.
 
 ### Reconciliation
 

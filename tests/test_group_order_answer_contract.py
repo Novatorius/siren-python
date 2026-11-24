@@ -15,7 +15,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import siren
-from siren import AppItemKind
+from siren import FeatureKind
 
 CONTRACTS = json.loads(
     (Path(__file__).parent / "fixtures" / "apps-feature-contracts" / "requests.json").read_text()
@@ -59,7 +59,7 @@ def answer_of(data: dict) -> dict:
 
 
 def test_the_kind_is_the_value_siren_stores():
-    assert AppItemKind.PROGRAM_GROUP_SORTER == "programGroupSorter"
+    assert FeatureKind.PROGRAM_GROUP_SORTER == "programGroupSorter"
     assert siren.AppGroupOrderQuestion.__name__ == "AppGroupOrderQuestion"
 
 

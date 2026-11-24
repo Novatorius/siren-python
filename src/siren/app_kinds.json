@@ -1,0 +1,114 @@
+[
+    {
+        "kind": "postConversionAction",
+        "term": "post-conversion action",
+        "name": "Post-conversion action",
+        "description": "Siren tells the app when a conversion is approved in a program that picks this action.",
+        "mode": "tell",
+        "direction": "out"
+    },
+    {
+        "kind": "postAllocationAction",
+        "term": "post-allocation action",
+        "name": "Post-allocation action",
+        "description": "Siren tells the app when an allocation completes for a distributor that picks this action.",
+        "mode": "tell",
+        "direction": "out"
+    },
+    {
+        "kind": "payoutMethod",
+        "term": "payout method",
+        "name": "Payout method",
+        "description": "Siren asks the app to pay a payout, in the currencies it names, when an autofulfiller picks this method.",
+        "mode": "ask",
+        "direction": "out"
+    },
+    {
+        "kind": "distributionResolver",
+        "term": "distribution resolver",
+        "name": "Distribution resolver",
+        "description": "Siren asks the app how to divide a distribution's pool when its distributor picks this resolver.",
+        "mode": "ask",
+        "direction": "in"
+    },
+    {
+        "kind": "customEvent",
+        "term": "custom event",
+        "name": "Custom event",
+        "description": "The app sends Siren an event of its own at /event/{key}, with a short-lived token its key gets. Programs and distributors can credit it.",
+        "mode": "receive",
+        "direction": "in"
+    },
+    {
+        "kind": "metricCalculation",
+        "term": "calculation strategy",
+        "name": "Metric calculation",
+        "description": "Siren asks the app who scores, and how much, each time a metric triggers for a distributor whose metric type picks this calculation.",
+        "mode": "ask",
+        "direction": "in"
+    },
+    {
+        "kind": "metricFilter",
+        "term": "metric filter",
+        "name": "Customer filter for distributors",
+        "description": "Siren asks the app whether a metric may score each time one triggers for a distributor that picks this filter.",
+        "mode": "ask",
+        "direction": "in"
+    },
+    {
+        "kind": "incentiveResolver",
+        "term": "incentive resolver",
+        "name": "Attribution model",
+        "description": "Siren asks the app how to split a program's reward among the collaborators a sale or lead converted, when the program picks this resolver.",
+        "mode": "ask",
+        "direction": "in"
+    },
+    {
+        "kind": "transactionFilter",
+        "term": "transaction compiler",
+        "name": "Transaction filter",
+        "description": "Siren asks the app which of a sale's lines count, once per sale for each program or distributor that picks this filter.",
+        "mode": "ask",
+        "direction": "in"
+    },
+    {
+        "kind": "incentiveType",
+        "term": "incentive type",
+        "name": "Incentive structure",
+        "description": "Siren asks the app which engagements a sale, lead or renewal converts on a program that picks this structure, and the reward pool they share.",
+        "mode": "ask",
+        "direction": "in"
+    },
+    {
+        "kind": "engagementCalculation",
+        "term": "calculation strategy",
+        "name": "Engagement calculation",
+        "description": "Siren asks the app who earns an engagement, and its score, each time one triggers for a program whose engagement type picks this calculation.",
+        "mode": "ask",
+        "direction": "in"
+    },
+    {
+        "kind": "engagementFilter",
+        "term": "engagement filter",
+        "name": "Customer filter for programs",
+        "description": "Siren asks the app whether an engagement may be written each time one triggers for a program that picks this filter.",
+        "mode": "ask",
+        "direction": "in"
+    },
+    {
+        "kind": "programGroupSorter",
+        "term": "group sorter",
+        "name": "Program group structure",
+        "description": "Siren asks the app which program of a program group a sale or lead tries first, when the group picks this structure.",
+        "mode": "ask",
+        "direction": "in"
+    },
+    {
+        "kind": "collaboratorGroupStructure",
+        "term": "collaborator group structure",
+        "name": "Collaborator group structure",
+        "description": "Siren asks the app who sits above and below whom in a collaborator group each time a cascade runs over a group that picks this structure.",
+        "mode": "ask",
+        "direction": "in"
+    }
+]

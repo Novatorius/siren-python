@@ -21,7 +21,7 @@ import pytest
 
 import siren
 from siren import (
-    AppItemKind,
+    FeatureKind,
     AppRequest,
     AppTransactionFilterAnswer,
     AppTransactionFilterQuestion,
@@ -69,7 +69,7 @@ README_SAMPLE = textwrap.dedent(
 
 def body_for(key: str, data: Any) -> str:
     request = dict(CONTRACTS["kinds"]["distributionResolver"]["request"])
-    request["item"] = {"kind": "transactionFilter", "key": key, "id": "app:11"}
+    request["feature"] = {"kind": "transactionFilter", "key": key, "id": "app:11"}
     request["data"] = data
     return json.dumps(request)
 
@@ -87,8 +87,8 @@ def sign(body: str) -> Dict[str, str]:
 
 
 def test_the_kind_is_named_with_the_value_siren_stores():
-    assert AppItemKind.TRANSACTION_FILTER == "transactionFilter"
-    assert "transactionFilter" in [kind.value for kind in AppItemKind]
+    assert FeatureKind.TRANSACTION_FILTER == "transactionFilter"
+    assert "transactionFilter" in [kind.value for kind in FeatureKind]
     assert siren.AppTransactionFilterAnswer is AppTransactionFilterAnswer
 
 

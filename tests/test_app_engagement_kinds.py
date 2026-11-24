@@ -10,14 +10,14 @@ import json
 import pytest
 
 import siren
-from siren import AppItemKind
+from siren import FeatureKind
 
 REQUEST_ID = "apr_b79943ff8ca353ce5cf5312bb3fa66c7"
 
 
 def test_the_kinds_match_the_values_siren_stores():
-    assert AppItemKind.ENGAGEMENT_CALCULATION == "engagementCalculation"
-    assert AppItemKind.ENGAGEMENT_FILTER == "engagementFilter"
+    assert FeatureKind.ENGAGEMENT_CALCULATION == "engagementCalculation"
+    assert FeatureKind.ENGAGEMENT_FILTER == "engagementFilter"
     assert siren.AppEngagementCalculationQuestion.__annotations__.keys() >= {"program", "args", "opportunity", "cause"}
     assert siren.AppEngagementFilterQuestion.__annotations__.keys() >= {"program", "collaborator", "opportunity", "cause"}
 

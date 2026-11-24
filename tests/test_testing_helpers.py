@@ -56,7 +56,7 @@ def test_app_request_signs_a_request_siren_would_send(kind):
     v1 = hmac.new(SECRET.encode(), f"{t}.".encode() + request.raw_body, hashlib.sha256).hexdigest()
     assert request.headers["X-Siren-Signature-V2"] == f"t={t},v1={v1}"
     assert request.headers["X-Siren-Event"] == "app.request"
-    assert body["item"]["kind"] == kind and body["item"]["key"] == "my-feature"
+    assert body["feature"]["kind"] == kind and body["feature"]["key"] == "my-feature"
     assert body["mode"] == ("tell" if kind in TELLS else "ask")
     assert body["data"] == CONTRACTS["kinds"][kind]["request"]["data"]
     assert re.fullmatch(r"apr_[0-9a-f]{32}", body["id"])
@@ -66,7 +66,7 @@ def test_app_request_signs_a_request_siren_would_send(kind):
         assert body["answerUrl"] == f"https://api.sirenaffiliates.com/siren/v1/apps/requests/{body['id']}/answer"
     # The SDK's own check takes it.
     checked = siren.Siren(api_key="sk_test").apps.verify_request(request.raw_body, request.headers, SECRET)
-    assert checked.item == body["item"]
+    assert checked.feature == body["feature"]
 
 
 def test_app_request_takes_data_an_id_and_an_address():

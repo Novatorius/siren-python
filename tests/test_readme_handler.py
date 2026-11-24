@@ -57,7 +57,7 @@ HEAD = FIRST[: FIRST.index("app = Flask")].replace("from flask import Flask\n", 
 def signed(kind: str = ASK):
     """Siren's own request for the kind, signed by ``siren.testing.app_request()``."""
     request = CONTRACTS["kinds"][kind]["request"]
-    made = testing.app_request(kind, request["item"]["key"], data=request["data"], secret=SECRET, id=CONTRACTS["requestKey"], app=CONTRACTS["app"])
+    made = testing.app_request(kind, request["feature"]["key"], data=request["data"], secret=SECRET, id=CONTRACTS["requestKey"], app=CONTRACTS["app"])
     return made.raw_body, made.headers
 
 
@@ -299,3 +299,24 @@ def test_try_it_snippet_runs_as_a_pytest_file(siren_api):
     for name in ran:
         tests[name]()
     assert len(siren_api.calls) == 0
+
+
+def test_features_snippet_adds_changes_and_removes_a_feature(capsys):
+    code = snippet("features")
+    feature = {"id": 31, "kind": "distributionResolver", "key": "split-by-score", "name": "Split by score"}
+    with respx.mock(base_url="https://api.sirenaffiliates.com/siren/v1", assert_all_called=True) as api:
+        added = api.post("/apps/acme-payouts/features").mock(return_value=httpx.Response(201, json=feature))
+        changed = api.patch("/apps/acme-payouts/features/31").mock(
+            return_value=httpx.Response(200, json={**feature, "name": "Split by score, then tenure"})
+        )
+        api.delete("/apps/acme-payouts/features/31").mock(
+            return_value=httpx.Response(200, json={"archived": False, "feature": None})
+        )
+        with siren.Siren(api_key="dashboard-session") as client:
+            exec(compile(code, "README.md", "exec"), {"client": client})
+
+    assert json.loads(added.calls[0].request.content) == {"kind": "distributionResolver", "key": "split-by-score", "name": "Split by score"}
+    assert json.loads(changed.calls[0].request.content) == {"name": "Split by score, then tenure"}
+    printed = capsys.readouterr().out.splitlines()
+    said = [line.split("# ", 1)[1] for line in code.splitlines() if line.startswith("print(")]
+    assert printed == ["False"] and said == ["False: no record picked it, so Siren deleted it"]

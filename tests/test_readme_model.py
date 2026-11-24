@@ -69,5 +69,5 @@ def test_the_readme_names_extra_kinds_and_the_refused_kinds():
 def test_the_request_type_names_the_id_to_dedupe_on():
     doc = " ".join(siren.AppRequest.__doc__.split())
     assert "the same on every send" in doc and "write once by ``id``" in doc
-    assert "``item[\"id\"]`` names the feature" in doc
+    assert "``feature[\"id\"]`` names the feature" in doc
     assert "changes on every send" in doc

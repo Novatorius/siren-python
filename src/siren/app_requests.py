@@ -74,7 +74,7 @@ from typing import (
 from .apps import REQUEST_EVENT, Apps, _BodyRefused, _check_signature, _check_tolerance, _checked_answer, _header
 from ._answer_checks import siren_refusal
 from .errors import ConflictError, ErrorCode, SignatureVerificationError, SirenError, ValidationError
-from .types import APP_REQUEST_KINDS, AppRequest, WebhookEvent
+from .types import APP_KINDS, APP_REQUEST_KINDS, AppRequest, WebhookEvent
 from .webhooks import _is_envelope as _is_webhook_envelope
 
 if TYPE_CHECKING:  # pragma: no cover
@@ -169,23 +169,11 @@ _LATER = _AnswerLater()
 
 # The kinds on() takes ---------------------------------------------------------
 
-#: Each kind's name on Siren Cloud's screens (Siren feat/apps,
-#: frontend/src/platform/saas/apps/apps.ts, APP_KINDS), for the words that
-#: refuse a name that is not a kind.
-_SCREEN_NAMES: Tuple[Tuple[str, str], ...] = (
-    ("postConversionAction", "Post-conversion action"),
-    ("postAllocationAction", "Post-allocation action"),
-    ("payoutMethod", "Payout method"),
-    ("distributionResolver", "Distribution resolver"),
-    ("incentiveResolver", "Attribution model"),
-    ("incentiveType", "Incentive structure"),
-    ("metricCalculation", "Metric calculation"),
-    ("metricFilter", "Customer filter for distributors"),
-    ("transactionFilter", "Transaction filter"),
-    ("engagementCalculation", "Engagement calculation"),
-    ("engagementFilter", "Customer filter for programs"),
-    ("programGroupSorter", "Program group structure"),
-    ("collaboratorGroupStructure", "Collaborator group structure"),
+#: Each kind Siren sends with its name on Siren Cloud's screens, read from
+#: the kind snapshot the SDK ships (:data:`~siren.APP_KINDS`), for the words
+#: that refuse a name that is not a kind.
+_SCREEN_NAMES: Tuple[Tuple[str, str], ...] = tuple(
+    (entry["kind"], entry["name"]) for entry in APP_KINDS if entry["kind"] in APP_REQUEST_KINDS
 )
 
 
@@ -219,7 +207,7 @@ def _kind_problem(name: str, extra: Tuple[str, ...]) -> Optional[str]:
         return f"Kinds are camelCase, as Siren sends them: {by_letters[squashed]}."
     for kind, screen in _SCREEN_NAMES:
         if _squash(screen) == squashed and squashed != kind.lower():
-            return f"{screen}'s kind is {kind}."
+            return f"The kind for {screen} is {kind}."
     near = by_letters.get(squashed)
     if near is None:
         distance, closest = min((_edit_distance(name, kind), kind) for kind in APP_REQUEST_KINDS)
@@ -403,7 +391,7 @@ class AppRequestHandler:
         one for the kind.
 
         ``kind`` is one of :data:`~siren.APP_REQUEST_KINDS`, as text or an
-        :class:`~siren.AppItemKind`, or a kind in the handler's
+        :class:`~siren.FeatureKind`, or a kind in the handler's
         ``extra_kinds``. Any other name is refused at once with words that
         say what to write, such as "distributionResolvr is not a feature
         kind. Did you mean distributionResolver?"
@@ -533,7 +521,7 @@ class AppRequestHandler:
             answer = _checked_answer(f"The function for {checked.label}", asked.id, returned)
         except ValueError as error:
             return AppSimulation(200, {}, None, error)
-        refusal = siren_refusal(asked.item["kind"], asked.data, answer)
+        refusal = siren_refusal(asked.feature["kind"], asked.data, answer)
         if refusal is not None:
             invalid = ValidationError(
                 refusal,
@@ -596,7 +584,7 @@ class AppRequestHandler:
                 if wrong_siren is not None:
                     self._report(SirenError(wrong_siren), request)
                     return _reply(500, wrong_siren)
-            kind, key = request.item["kind"], request.item["key"]
+            kind, key = request.feature["kind"], request.feature["key"]
             fn = self._functions.get((kind, key)) or self._functions.get((kind, None))
             if fn is None:
                 return _reply(404, f"No function handles {kind} {key}.")
@@ -698,7 +686,7 @@ class AppRequestHandler:
                 if not words.endswith((".", "!", "?")):
                     words += "."
                 after = _next_send(error, subject, mode)
-                line = f"Siren request handler ({subject.item['kind']} {subject.item['key']} {subject.id}): {words}"
+                line = f"Siren request handler ({subject.feature['kind']} {subject.feature['key']} {subject.id}): {words}"
                 logger.error("%s", f"{line} {after}" if after else line, exc_info=error)
             else:
                 logger.error("Siren request handler: %s", error, exc_info=error)

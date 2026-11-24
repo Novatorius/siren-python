@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
+- Code written against the apps branch before this entry says "feature"
+  where it said "item", as the docs, Siren Cloud's screens and Siren's
+  renamed envelope and routes do. `siren.FeatureKind` replaces
+  `AppItemKind`, with no old name, and a request's feature is
+  `request.feature`, read from the envelope's `feature`. A body with `item`
+  and no `feature` gets 400, "The request's `feature` must be an object with
+  `kind`, `key` and `id`." `siren.testing.app_request()` signs a body with
+  `feature`, and the fixture copies of Siren's requests follow Siren's
+  renamed fixture. Kinds keep their ids.
+- The screen-name refusal reads "The kind for Attribution model is
+  incentiveResolver." The names come from the kind snapshot below.
+- `siren.APP_REQUEST_KINDS` follows the order of Siren's registry, the "New
+  feature" chooser's order.
+
 - The request handler's `on()` refuses a kind Siren never sends, at once,
   with a `ValueError` that says what to write: a near miss gets "Did you
   mean distributionResolver?", a screen name such as `attributionModel` gets
@@ -26,6 +40,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that is not a request still raises `TypeError`.
 
 ### Added
+
+- `client.apps.features`: `create()`, `retrieve()`, `update()` and
+  `delete()` on `/apps/{app}/features`, with a dashboard session. `delete()`
+  returns `{"archived", "feature"}`. `siren.AppFeature`,
+  `siren.RemovedAppFeature` and `siren.AppRequestFeature` type them, and
+  `siren.ErrorCode.APP_FEATURES_NEED_KEY_AND_ADDRESS` names Siren's 409.
+- The SDK ships Siren's kind registry snapshot (Siren docs/api/app-kinds.json)
+  as `siren/app_kinds.json`, byte for byte, and reads it as
+  `siren.APP_KINDS`. `APP_REQUEST_KINDS` and the screen names `on()` refuses
+  come from it. Each `FeatureKind` member's docs give the kind's screen name,
+  Siren's own term where it differs, and its description, written by
+  `scripts/feature_kinds.py`. A test holds the shipped copy byte for byte
+  equal to the file `SIREN_APP_KINDS` names, and skips without it.
 
 - `siren.testing`, to try a request handler without Siren. `app_request(kind,
   key)` builds a request signed as Siren signs one, with the kind's sample
@@ -66,7 +93,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `expiresIn` and `url`, 400 for an event the page may not ask for or Siren
   refuses, and 502 when Siren can't be reached or refuses the key, and it
   reuses one token per event until fewer than 60 seconds are left.
-- `AppItemKind.TRANSACTION_FILTER` (`transactionFilter`), the feature kind a
+- `FeatureKind.TRANSACTION_FILTER` (`transactionFilter`), the feature kind a
   program or a distributor picks to let the app say which of a sale's own
   lines count. Siren's catalog calls it a transaction compiler. Siren asks it
   once per sale for each program or distributor that picks it, and a refund
@@ -76,7 +103,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Siren refuses a line id the question lacks with 422 `app_answer_invalid`.
   The README shows the question and a handler that counts only `lineItem`
   lines.
-- `AppItemKind.COLLABORATOR_GROUP_STRUCTURE` (`collaboratorGroupStructure`),
+- `FeatureKind.COLLABORATOR_GROUP_STRUCTURE` (`collaboratorGroupStructure`),
   the feature kind a collaborator group picks to let the app give the group's
   shape. Siren asks it once per cascade trigger on the group, for a program
   or a distributor. The types `AppCollaboratorGroupStructureQuestion`,
@@ -108,7 +135,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   whole steps of the currency, rounded down so the sum never passes the
   pool, and evenly when every weight is 0. It raises `ValueError` for a
   negative or non-finite weight.
-- `AppItemKind.INCENTIVE_TYPE` (`incentiveType`), the kind a program picks as
+- `FeatureKind.INCENTIVE_TYPE` (`incentiveType`), the kind a program picks as
   its incentive type to let the app decide which engagements each sale, lead
   or renewal converts and the pool the program's resolver divides, with the
   types `AppIncentiveTypeQuestion`, `AppIncentiveTypeEngagement`,
@@ -116,14 +143,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `AppIncentiveTypeAnswer`, `{"outcome": "award", "units": ..., "pool": ...,
   "engagementIds": [...]}` or `{"outcome": "none"}`. The README shows the
   handler's sample for it.
-- `AppItemKind.ENGAGEMENT_CALCULATION` (`engagementCalculation`) and
-  `AppItemKind.ENGAGEMENT_FILTER` (`engagementFilter`), the kinds a program's
+- `FeatureKind.ENGAGEMENT_CALCULATION` (`engagementCalculation`) and
+  `FeatureKind.ENGAGEMENT_FILTER` (`engagementFilter`), the kinds a program's
   engagement type and a program pick to let the app decide who earns each
   engagement and whether it is made, with the types
   `AppEngagementCalculationQuestion`, `AppEngagementCalculationAnswer`,
   `AppEngagementFilterQuestion`, `AppEngagementFilterAnswer` and
   `AppEngagementCause`. The README shows the answer each takes.
-- `AppItemKind.PROGRAM_GROUP_SORTER` (`programGroupSorter`), the kind a
+- `FeatureKind.PROGRAM_GROUP_SORTER` (`programGroupSorter`), the kind a
   program group picks as its structure to let the app order its programs for
   each sale or lead, with the types `AppGroupOrderQuestion`,
   `AppGroupOrderProgram`, `AppGroupOrderEngagement` and `AppGroupOrderAnswer`,
@@ -134,8 +161,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `AppConversionActionData`, `AppAllocationActionData`, and the `AppCurrency`,
   `AppAmount`, `AppDistributionPool`, `AppDistributionMetric` and
   `AppRewardConversion` they hold.
-- `AppItemKind` names the kinds of feature an app can add, as an app
-  request's `item["kind"]` carries them, among them the new
+- `FeatureKind` names the kinds of feature an app can add, as an app
+  request's `feature["kind"]` carries them, among them the new
   `METRIC_CALCULATION` (`metricCalculation`), `METRIC_FILTER` (`metricFilter`)
   and `INCENTIVE_RESOLVER` (`incentiveResolver`), which a program picks to let
   the app split each sale's reward. The README shows the answer each of the
@@ -176,12 +203,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sooner, from Needs attention or with `siren apps resend <id>`. For a tell,
   it is about a minute. A 409 says nothing about a next send, since none
   comes.
-- `on()` takes an `AppItemKind` member as well as its text.
+- `on()` takes a `FeatureKind` member as well as its text.
 - The README opens with "How Siren talks to your app", the same six lines
   as the Node and PHP READMEs. It says an ask's function can run more than
   once and must return the same answer each time, and its reply table gains
   "When your function fails". `AppRequest`'s docstring names `id` as the id
-  to write once by, beside the feature's `item["id"]` and the per-send
+  to write once by, beside the feature's `feature["id"]` and the per-send
   `delivery_id`.
 - A signed body that is not an app request of version 1 gets a 400, and a
   `SignatureVerificationError` from `apps.verify_request()`, whose words name

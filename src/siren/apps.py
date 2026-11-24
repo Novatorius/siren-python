@@ -15,11 +15,11 @@ import os
 import re
 import time
 from fractions import Fraction
-from typing import TYPE_CHECKING, Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple, Union
+from typing import TYPE_CHECKING, Any, Callable, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple, Union, cast
 
 from ._client import HttpClient, parse_json
 from .errors import ApiError, AuthenticationError, ErrorCode, SignatureVerificationError
-from .types import AppAnswerReceipt, AppRequest
+from .types import AppAnswerReceipt, AppFeature, AppRequest, RemovedAppFeature
 
 if TYPE_CHECKING:  # pragma: no cover
     from .app_requests import AppRequestHandler
@@ -110,12 +110,12 @@ def _envelope_problem(body: Any) -> Optional[str]:
         return "The request's `mode` must be `tell` or `ask`."
     if not isinstance(body.get("app"), str) or body["app"] == "":
         return "The request's `app` must be the app's key, as text."
-    item = body.get("item")
-    if not _is_object(item):
-        return "The request's `item` must be an object with `kind`, `key` and `id`."
+    feature = body.get("feature")
+    if not _is_object(feature):
+        return "The request's `feature` must be an object with `kind`, `key` and `id`."
     for name in ("kind", "key", "id"):
-        if not isinstance(item.get(name), str):
-            return f"The request's `item.{name}` must be text."
+        if not isinstance(feature.get(name), str):
+            return f"The request's `feature.{name}` must be text."
     if not isinstance(body.get("createdAt"), str):
         return "The request's `createdAt` must be a date as text."
     if not _is_object(body.get("data")):
@@ -270,12 +270,170 @@ class AppRequests:
         return AppAnswerReceipt(status="accepted", duplicate=duplicate is True)
 
 
+_APP_KEY = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+
+#: Words Siren keeps for its own routes under ``/apps``, never an app's key.
+RESERVED_APP_KEYS: Tuple[str, ...] = ("requests", "events", "scopes", "kinds")
+
+
+def _app_path(app: Any, method: str) -> str:
+    """``/apps/{app}``, or :class:`ValueError` naming ``method`` for an app
+    key that is not lowercase letters and digits joined by single dashes, at
+    most 64 characters, or that is one of :data:`RESERVED_APP_KEYS`."""
+    if not isinstance(app, str) or len(app) > 64 or not _APP_KEY.match(app) or app in RESERVED_APP_KEYS:
+        raise ValueError(
+            f"{method} needs an app key of lowercase letters and digits joined by single dashes, "
+            f"at most 64 characters and never {', '.join(RESERVED_APP_KEYS)}, and got {app!r}."
+        )
+    return f"/apps/{app}"
+
+
+def _feature_id(feature_id: Any, method: str) -> int:
+    if isinstance(feature_id, bool) or not isinstance(feature_id, int) or feature_id < 1:
+        raise ValueError(f"{method} needs a positive whole number feature id, and got {feature_id!r}.")
+    return feature_id
+
+
+def _picked(params: Any, allowed: Tuple[str, ...], method: str, what: str) -> Dict[str, Any]:
+    if not isinstance(params, Mapping):
+        raise ValueError(f"{method} needs {what} as a dict.")
+    for name in params:
+        if name not in allowed:
+            if name in ("kind", "key") and "kind" not in allowed:
+                raise ValueError(
+                    f"{method} cannot change {name}. A feature's kind and key never change once Siren makes it."
+                )
+            raise ValueError(f"{method} does not take {name}.")
+    return dict(params)
+
+
+def _is_feature(body: Any) -> bool:
+    return (
+        _is_object(body)
+        and isinstance(body.get("id"), int)
+        and not isinstance(body.get("id"), bool)
+        and isinstance(body.get("kind"), str)
+        and isinstance(body.get("key"), str)
+    )
+
+
+def _checked_feature(response: Any, route: str) -> "AppFeature":
+    body = parse_json(response)
+    if not _is_feature(body):
+        raise ApiError(f"Siren answered {route} with a body that is not a feature.", status_code=response.status_code, data=body)
+    return cast("AppFeature", body)
+
+
+class AppFeatures:
+    """``siren.apps.features`` — one app's features through their own
+    routes, ``/apps/{app}/features``, so the dashboard and code can add one
+    without declaring the whole app. A feature's kind and key lock once
+    Siren makes it.
+
+    These routes take an organization admin's dashboard session, passed as
+    the client's key. Siren answers an API key with a 401 that the SDK
+    raises as :class:`~siren.ApiKeyNotAcceptedError`, and a member limited
+    to some stores with a 403, reads included, since a feature's page names
+    the records that pick it.
+
+    Each method refuses a bad app key or feature id with
+    :class:`ValueError` before it sends anything.
+    """
+
+    #: The fields :meth:`create` sends, those ``POST /apps/{app}/features``
+    #: reads.
+    CREATE_FIELDS: Tuple[str, ...] = (
+        "kind", "key", "name", "description", "currencies", "answerWindowMinutes",
+        "scoresMoney", "conversionTypes", "fields", "domains",
+    )
+    #: The fields :meth:`update` sends. Siren refuses a changed kind or key.
+    UPDATE_FIELDS: Tuple[str, ...] = CREATE_FIELDS[2:]
+
+    def __init__(self, client: HttpClient) -> None:
+        self._client = client
+
+    def create(self, app: str, feature: Mapping[str, Any]) -> "AppFeature":
+        """Add one feature to the app (``POST /apps/{app}/features``), sent
+        once, and return it with ``uses`` and ``usedBy``. Siren answers 201,
+        or 200 when an archived feature of the same kind and key comes back
+        with the new fields.
+
+        Raises :class:`ValueError` before sending for a feature that is not
+        a dict, a field not in :attr:`CREATE_FIELDS`, or no ``kind`` or
+        ``name``. With no ``key``, Siren makes one from the name. Siren
+        answers 422 with the field for the rest
+        (:class:`~siren.ValidationError`), 409
+        ``app_features_need_key_and_address`` when the app lacks a key or an
+        address (:class:`~siren.ConflictError`), and 404 for an app the
+        organization lacks.
+        """
+        method = "apps.features.create()"
+        path = f"{_app_path(app, method)}/features"
+        sent = _picked(feature, self.CREATE_FIELDS, method, "the feature")
+        for name in ("kind", "name"):
+            if sent.get(name) is None:
+                raise ValueError(f"{method} needs a {name}.")
+        response = self._client.request("POST", path, json=sent, retryable=False)
+        return _checked_feature(response, f"POST {path}")
+
+    def retrieve(self, app: str, feature_id: int) -> "AppFeature":
+        """One feature by its id, with ``uses``, how many records pick it,
+        ``usedBy``, up to 100 of them, and ``openRequests``
+        (``GET /apps/{app}/features/{id}``). Retried as a read. Siren
+        answers 404, ``Feature not found.``, for a feature another app
+        holds."""
+        method = "apps.features.retrieve()"
+        path = f"{_app_path(app, method)}/features/{_feature_id(feature_id, method)}"
+        return _checked_feature(self._client.request("GET", path), f"GET {path}")
+
+    def update(self, app: str, feature_id: int, changes: Mapping[str, Any]) -> "AppFeature":
+        """Change a feature's name, description or settings
+        (``PATCH /apps/{app}/features/{id}``), sent once, and return it. A
+        field left out keeps its value.
+
+        Raises :class:`ValueError` before sending for changes that are not a
+        dict and any field not in :attr:`UPDATE_FIELDS`, ``kind`` and
+        ``key`` included, since a feature's kind and key never change.
+        """
+        method = "apps.features.update()"
+        path = f"{_app_path(app, method)}/features/{_feature_id(feature_id, method)}"
+        sent = _picked(changes, self.UPDATE_FIELDS, method, "the change")
+        response = self._client.request("PATCH", path, json=sent, retryable=False)
+        return _checked_feature(response, f"PATCH {path}")
+
+    def delete(self, app: str, feature_id: int) -> "RemovedAppFeature":
+        """Remove a feature (``DELETE /apps/{app}/features/{id}``), sent
+        once. Siren archives it while a record picks it and answers
+        ``{"archived": True, "feature": {...}}``, and deletes it otherwise
+        and answers ``{"archived": False, "feature": None}``. Raises
+        :class:`~siren.ApiError` for any other body."""
+        method = "apps.features.delete()"
+        path = f"{_app_path(app, method)}/features/{_feature_id(feature_id, method)}"
+        response = self._client.request("DELETE", path, retryable=False)
+        body = parse_json(response)
+        fits = (
+            _is_object(body)
+            and set(body) == {"archived", "feature"}
+            and isinstance(body["archived"], bool)
+            and (body["feature"] is None or _is_feature(body["feature"]))
+        )
+        if not fits:
+            raise ApiError(
+                f"Siren answered DELETE {path} with a body that is not {{archived, feature}}.",
+                status_code=response.status_code,
+                data=body,
+            )
+        return cast("RemovedAppFeature", body)
+
+
 class Apps:
-    """``siren.apps`` — check a request Siren signed and sent the app, and
-    answer an ask through :attr:`requests`."""
+    """``siren.apps`` — check a request Siren signed and sent the app,
+    answer an ask through :attr:`requests`, and add, read, change and remove
+    one app's features through :attr:`features`."""
 
     def __init__(self, client: HttpClient) -> None:
         self.requests = AppRequests(client)
+        self.features = AppFeatures(client)
 
     def request_handler(
         self,
@@ -471,7 +629,7 @@ class Apps:
             type=body["type"],
             mode=body["mode"],
             app=body["app"],
-            item=dict(body["item"]),
+            feature={"kind": body["feature"]["kind"], "key": body["feature"]["key"], "id": body["feature"]["id"]},
             created_at=body["createdAt"],
             answer_by=body.get("answerBy") if isinstance(body.get("answerBy"), str) else None,
             answer_url=body.get("answerUrl") if isinstance(body.get("answerUrl"), str) else None,

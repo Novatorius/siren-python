@@ -11,13 +11,13 @@ import httpx
 import pytest
 
 import siren
-from siren import AppItemKind
+from siren import FeatureKind
 
 REQUEST_ID = "apr_b79943ff8ca353ce5cf5312bb3fa66c7"
 
 
 def test_the_kinds_match_the_values_siren_stores():
-    assert sorted(kind.value for kind in AppItemKind) == [
+    assert sorted(kind.value for kind in FeatureKind) == [
         "collaboratorGroupStructure",
         "customEvent",
         "distributionResolver",
@@ -33,8 +33,8 @@ def test_the_kinds_match_the_values_siren_stores():
         "programGroupSorter",
         "transactionFilter",
     ]
-    assert AppItemKind.INCENTIVE_RESOLVER == "incentiveResolver"
-    assert siren.AppItemKind is AppItemKind
+    assert FeatureKind.INCENTIVE_RESOLVER == "incentiveResolver"
+    assert siren.FeatureKind is FeatureKind
 
 
 @pytest.mark.parametrize(

@@ -22,14 +22,14 @@
   },
   "kinds": {
     "payoutMethod": {
-      "item": { "key": "acme-ledger", "id": "app:12" },
+      "feature": { "key": "acme-ledger", "id": "app:12" },
       "request": {
         "version": 1,
         "id": "apr_9c60190a4501399d0ae55f041c237b39",
         "type": "app.request",
         "mode": "ask",
         "app": "acme-crm",
-        "item": { "kind": "payoutMethod", "key": "acme-ledger", "id": "app:12" },
+        "feature": { "kind": "payoutMethod", "key": "acme-ledger", "id": "app:12" },
         "createdAt": "2026-11-17T12:20:03+00:00",
         "answerBy": "2026-11-17T13:20:03+00:00",
         "answerUrl": "https://cloud.example.com/siren/v1/apps/requests/apr_9c60190a4501399d0ae55f041c237b39/answer",
@@ -46,14 +46,14 @@
       "answer": { "outcome": "paid", "reference": "acme-ledger-5521" }
     },
     "incentiveResolver": {
-      "item": { "key": "split-the-reward", "id": "app:10" },
+      "feature": { "key": "split-the-reward", "id": "app:10" },
       "request": {
         "version": 1,
         "id": "apr_9c60190a4501399d0ae55f041c237b39",
         "type": "app.request",
         "mode": "ask",
         "app": "acme-crm",
-        "item": { "kind": "incentiveResolver", "key": "split-the-reward", "id": "app:10" },
+        "feature": { "kind": "incentiveResolver", "key": "split-the-reward", "id": "app:10" },
         "createdAt": "2026-11-17T12:20:03+00:00",
         "answerBy": "2026-11-17T13:20:03+00:00",
         "answerUrl": "https://cloud.example.com/siren/v1/apps/requests/apr_9c60190a4501399d0ae55f041c237b39/answer",
@@ -80,14 +80,14 @@
       "answer": { "outcome": "rewards", "units": "USD", "rewards": { "1042": 900, "1043": 600 } }
     },
     "postConversionAction": {
-      "item": { "key": "tell-the-crm", "id": "app:7" },
+      "feature": { "key": "tell-the-crm", "id": "app:7" },
       "request": {
         "version": 1,
         "id": "apr_9c60190a4501399d0ae55f041c237b39",
         "type": "app.request",
         "mode": "tell",
         "app": "acme-crm",
-        "item": { "kind": "postConversionAction", "key": "tell-the-crm", "id": "app:7" },
+        "feature": { "kind": "postConversionAction", "key": "tell-the-crm", "id": "app:7" },
         "createdAt": "2026-11-17T12:20:03+00:00",
         "data": {
           "conversion": {
@@ -111,14 +111,14 @@
       "answer": null
     },
     "postAllocationAction": {
-      "item": { "key": "note-the-share", "id": "app:8" },
+      "feature": { "key": "note-the-share", "id": "app:8" },
       "request": {
         "version": 1,
         "id": "apr_9c60190a4501399d0ae55f041c237b39",
         "type": "app.request",
         "mode": "tell",
         "app": "acme-crm",
-        "item": { "kind": "postAllocationAction", "key": "note-the-share", "id": "app:8" },
+        "feature": { "kind": "postAllocationAction", "key": "note-the-share", "id": "app:8" },
         "createdAt": "2026-11-17T12:20:03+00:00",
         "data": {
           "allocation": {
@@ -136,14 +136,14 @@
       "answer": null
     },
     "distributionResolver": {
-      "item": { "key": "split-by-score", "id": "app:9" },
+      "feature": { "key": "split-by-score", "id": "app:9" },
       "request": {
         "version": 1,
         "id": "apr_9c60190a4501399d0ae55f041c237b39",
         "type": "app.request",
         "mode": "ask",
         "app": "acme-crm",
-        "item": { "kind": "distributionResolver", "key": "split-by-score", "id": "app:9" },
+        "feature": { "kind": "distributionResolver", "key": "split-by-score", "id": "app:9" },
         "createdAt": "2026-11-17T12:20:03+00:00",
         "answerBy": "2026-11-17T13:20:03+00:00",
         "answerUrl": "https://cloud.example.com/siren/v1/apps/requests/apr_9c60190a4501399d0ae55f041c237b39/answer",
@@ -166,14 +166,14 @@
       "answer": { "outcome": "allocated", "units": "USD", "shares": { "41": 6000, "43": 4000 } }
     },
     "metricCalculation": {
-      "item": { "key": "visit-score", "id": "app:11" },
+      "feature": { "key": "visit-score", "id": "app:11" },
       "request": {
         "version": 1,
         "id": "apr_9c60190a4501399d0ae55f041c237b39",
         "type": "app.request",
         "mode": "ask",
         "app": "acme-crm",
-        "item": { "kind": "metricCalculation", "key": "visit-score", "id": "app:11" },
+        "feature": { "kind": "metricCalculation", "key": "visit-score", "id": "app:11" },
         "createdAt": "2026-11-17T12:20:03+00:00",
         "answerBy": "2026-11-17T13:20:03+00:00",
         "answerUrl": "https://cloud.example.com/siren/v1/apps/requests/apr_9c60190a4501399d0ae55f041c237b39/answer",
@@ -192,14 +192,14 @@
       "answer": { "outcome": "scores", "results": [{ "collaboratorId": 42, "score": 10 }, { "collaboratorId": 57, "score": 2 }] }
     },
     "metricFilter": {
-      "item": { "key": "refund-check", "id": "app:12" },
+      "feature": { "key": "refund-check", "id": "app:12" },
       "request": {
         "version": 1,
         "id": "apr_9c60190a4501399d0ae55f041c237b39",
         "type": "app.request",
         "mode": "ask",
         "app": "acme-crm",
-        "item": { "kind": "metricFilter", "key": "refund-check", "id": "app:12" },
+        "feature": { "kind": "metricFilter", "key": "refund-check", "id": "app:12" },
         "createdAt": "2026-11-17T12:20:03+00:00",
         "answerBy": "2026-11-17T13:20:03+00:00",
         "answerUrl": "https://cloud.example.com/siren/v1/apps/requests/apr_9c60190a4501399d0ae55f041c237b39/answer",
@@ -217,14 +217,14 @@
       "answer": { "outcome": "suppress", "reason": "The order was refunded within 30 days." }
     },
     "engagementCalculation": {
-      "item": { "key": "visit-weight", "id": "app:21" },
+      "feature": { "key": "visit-weight", "id": "app:21" },
       "request": {
         "version": 1,
         "id": "apr_9c60190a4501399d0ae55f041c237b39",
         "type": "app.request",
         "mode": "ask",
         "app": "acme-crm",
-        "item": { "kind": "engagementCalculation", "key": "visit-weight", "id": "app:21" },
+        "feature": { "kind": "engagementCalculation", "key": "visit-weight", "id": "app:21" },
         "createdAt": "2026-11-17T12:20:03+00:00",
         "answerBy": "2026-11-17T13:20:03+00:00",
         "answerUrl": "https://cloud.example.com/siren/v1/apps/requests/apr_9c60190a4501399d0ae55f041c237b39/answer",
@@ -241,14 +241,14 @@
       "answer": { "outcome": "engagements", "results": [{ "collaboratorId": 42, "score": 10 }, { "collaboratorId": 57, "score": 2 }] }
     },
     "engagementFilter": {
-      "item": { "key": "staff-check", "id": "app:22" },
+      "feature": { "key": "staff-check", "id": "app:22" },
       "request": {
         "version": 1,
         "id": "apr_9c60190a4501399d0ae55f041c237b39",
         "type": "app.request",
         "mode": "ask",
         "app": "acme-crm",
-        "item": { "kind": "engagementFilter", "key": "staff-check", "id": "app:22" },
+        "feature": { "kind": "engagementFilter", "key": "staff-check", "id": "app:22" },
         "createdAt": "2026-11-17T12:20:03+00:00",
         "answerBy": "2026-11-17T13:20:03+00:00",
         "answerUrl": "https://cloud.example.com/siren/v1/apps/requests/apr_9c60190a4501399d0ae55f041c237b39/answer",
@@ -263,14 +263,14 @@
       "answer": { "outcome": "suppress", "reason": "The visitor works for the partner." }
     },
     "incentiveType": {
-      "item": { "key": "pay-on-closed-deals", "id": "app:16" },
+      "feature": { "key": "pay-on-closed-deals", "id": "app:16" },
       "request": {
         "version": 1,
         "id": "apr_9c60190a4501399d0ae55f041c237b39",
         "type": "app.request",
         "mode": "ask",
         "app": "acme-crm",
-        "item": { "kind": "incentiveType", "key": "pay-on-closed-deals", "id": "app:16" },
+        "feature": { "kind": "incentiveType", "key": "pay-on-closed-deals", "id": "app:16" },
         "createdAt": "2026-11-17T12:20:03+00:00",
         "answerBy": "2026-11-17T13:20:03+00:00",
         "answerUrl": "https://cloud.example.com/siren/v1/apps/requests/apr_9c60190a4501399d0ae55f041c237b39/answer",
@@ -297,14 +297,14 @@
       "answer": { "outcome": "award", "units": "USD", "pool": 1500, "engagementIds": [880, 881] }
     },
     "programGroupSorter": {
-      "item": { "key": "pick-the-program", "id": "app:13" },
+      "feature": { "key": "pick-the-program", "id": "app:13" },
       "request": {
         "version": 1,
         "id": "apr_9c60190a4501399d0ae55f041c237b39",
         "type": "app.request",
         "mode": "ask",
         "app": "acme-crm",
-        "item": { "kind": "programGroupSorter", "key": "pick-the-program", "id": "app:13" },
+        "feature": { "kind": "programGroupSorter", "key": "pick-the-program", "id": "app:13" },
         "createdAt": "2026-11-17T12:20:03+00:00",
         "answerBy": "2026-11-17T13:20:03+00:00",
         "answerUrl": "https://cloud.example.com/siren/v1/apps/requests/apr_9c60190a4501399d0ae55f041c237b39/answer",
@@ -322,14 +322,14 @@
       "answer": { "outcome": "sorted", "programIds": [9, 12] }
     },
     "transactionFilter": {
-      "item": { "key": "plan-lines", "id": "app:13" },
+      "feature": { "key": "plan-lines", "id": "app:13" },
       "request": {
         "version": 1,
         "id": "apr_9c60190a4501399d0ae55f041c237b39",
         "type": "app.request",
         "mode": "ask",
         "app": "acme-crm",
-        "item": { "kind": "transactionFilter", "key": "plan-lines", "id": "app:13" },
+        "feature": { "kind": "transactionFilter", "key": "plan-lines", "id": "app:13" },
         "createdAt": "2026-11-17T12:20:03+00:00",
         "answerBy": "2026-11-17T13:20:03+00:00",
         "answerUrl": "https://cloud.example.com/siren/v1/apps/requests/apr_9c60190a4501399d0ae55f041c237b39/answer",
@@ -347,14 +347,14 @@
       "answer": { "outcome": "filtered", "include": [5501] }
     },
     "collaboratorGroupStructure": {
-      "item": { "key": "team-tree", "id": "app:17" },
+      "feature": { "key": "team-tree", "id": "app:17" },
       "request": {
         "version": 1,
         "id": "apr_9c60190a4501399d0ae55f041c237b39",
         "type": "app.request",
         "mode": "ask",
         "app": "acme-crm",
-        "item": { "kind": "collaboratorGroupStructure", "key": "team-tree", "id": "app:17" },
+        "feature": { "kind": "collaboratorGroupStructure", "key": "team-tree", "id": "app:17" },
         "createdAt": "2026-11-17T12:20:03+00:00",
         "answerBy": "2026-11-17T13:20:03+00:00",
         "answerUrl": "https://cloud.example.com/siren/v1/apps/requests/apr_9c60190a4501399d0ae55f041c237b39/answer",

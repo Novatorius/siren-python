@@ -15,7 +15,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import siren
-from siren import AppItemKind
+from siren import FeatureKind
 
 CONTRACTS = json.loads(
     (Path(__file__).parent / "fixtures" / "apps-feature-contracts" / "requests.json").read_text()
@@ -63,7 +63,7 @@ def answer_of(data: dict) -> dict:
 
 
 def test_the_kind_is_the_value_siren_stores_and_its_types_are_public():
-    assert AppItemKind.INCENTIVE_TYPE == "incentiveType"
+    assert FeatureKind.INCENTIVE_TYPE == "incentiveType"
     for name in ["AppIncentiveTypeQuestion", "AppIncentiveTypeEngagement", "AppIncentiveTypeAwardAnswer", "AppIncentiveTypeNoneAnswer", "AppIncentiveTypeAnswer"]:
         assert name in siren.__all__
         assert getattr(siren, name) is not None
