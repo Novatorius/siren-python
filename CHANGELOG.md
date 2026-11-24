@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `events.ingest()` sends an app's custom event with a short-lived app
+  token in place of the key, as Siren takes only that app's token at the
+  event's address. The client trades the app's key for a token
+  (`POST /oauth/token`) the first time, keeps it, gets a new one when fewer
+  than two minutes of its 20 are left, and on a 401 gets a new one and sends
+  once more. Threads that need a token at once share one request. A key that
+  belongs to no app still sends with the key.
+- `events.browser_token(event_key)` returns a `BrowserToken` for one custom
+  event, which lasts ten minutes and works only from a domain the event
+  allows. `events.browser_token_handler(events=...)` returns a
+  `BrowserTokenHandler`, the browser token address for the app's server, as
+  a plain call, `.wsgi` or `.asgi`. It answers 200 with `token`,
+  `expiresIn` and `url`, 400 for an event the page may not ask for or Siren
+  refuses, and 502 when Siren can't be reached or refuses the key, and it
+  reuses one token per event until fewer than 60 seconds are left.
 - `AppItemKind.TRANSACTION_FILTER` (`transactionFilter`), the feature kind a
   program or a distributor picks to let the app say which of a sale's own
   lines count. Siren's catalog calls it a transaction compiler. Siren asks it
@@ -96,6 +111,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   raises `ValueError` before sending for a bad id, an answer with no text
   `outcome`, and one over 16384 bytes of JSON, and gives Siren's uncoded 401
   the code `ErrorCode.APP_ANSWER_UNAUTHORIZED`.
+
+### Changed
+
+- The README starts with what the SDK can do, then shows the request
+  handler with a sample for Flask, Django, FastAPI or Starlette, any WSGI
+  server and a plain call. A section for each feature kind, named as Siren
+  Cloud's screens name it, gives the question Siren sends, a function that
+  answers it and the answer, followed by the payout method, custom events
+  with short-lived tokens, checking and answering by hand, and errors and
+  retries. Tests run every sample as written against Siren's own request for
+  each kind. The fixture copy of Siren's requests
+  (tests/fixtures/apps-feature-contracts/requests.json) now holds all 13
+  kinds.
 
 ## [0.2.0] - 2026-10-19
 

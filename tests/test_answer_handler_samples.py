@@ -1,17 +1,28 @@
-"""The feature page's Python samples (section 5 of the run's design note,
-design/sdk-answer-handler.md), copied here as written and run as one Flask
-app each on 127.0.0.1. A fake Siren signs Siren's own request for each kind
-(tests/fixtures/apps-feature-contracts/requests.json) with a test secret and
-delivers it over HTTP. A tell gets its 200 once the function returns. An ask
-gets its 200 before anything is posted, then the fake takes the posted
-answer, which must equal the fixture's. The README carries each sample word
-for word."""
+"""The README's handler samples, one per feature kind, run as written.
+
+The README's first sample (``handler-flask``) is a whole Flask app with the
+post-conversion action's function. Each kind's section has its own function
+(``fn-<kind>``), the question Siren sends (``question-<kind>``) and, for an
+ask, the answer the function gives (``answer-<kind>``). Each test puts the
+kind's function in place of the first sample's, runs the app on 127.0.0.1,
+and plays Siren: it signs Siren's own request for the kind
+(tests/fixtures/apps-feature-contracts/requests.json, a copy of Siren's
+tests/Fixtures file, which Siren's builders and feature page are held to)
+with a test secret and delivers it over HTTP. A tell gets its 200 once the
+function returns. An ask gets its 200 before anything is posted, then the
+fake Siren takes the posted answer, which must equal the README's answer and
+keep the kind's rules. The README's question must equal the fixture's.
+
+Only what a sample leaves to the developer is stubbed: ``add_to_crm``,
+``note_share``, ``is_refunded``, ``is_staff`` and ``pay_once``, and the two
+environment variables."""
 
 from __future__ import annotations
 
 import hashlib
 import hmac
 import json
+import re
 import threading
 import time
 import urllib.request
@@ -22,74 +33,64 @@ from wsgiref.simple_server import WSGIRequestHandler, make_server
 import httpx
 import pytest
 
+import siren
+
 ROOT = Path(__file__).resolve().parent.parent
+README = (ROOT / "README.md").read_text()
 CONTRACTS = json.loads((ROOT / "tests" / "fixtures" / "apps-feature-contracts" / "requests.json").read_text())
 SECRET = "cd" * 32
 APP_KEY = "sk_test_fake_app_key"
 
-# Section 5.1, the whole sample. 5.2 to 5.4 change only the function.
-SAMPLE_5_1 = '''import os
-import siren
-from flask import Flask
+KINDS = [
+    "postConversionAction",
+    "postAllocationAction",
+    "distributionResolver",
+    "incentiveResolver",
+    "incentiveType",
+    "metricCalculation",
+    "metricFilter",
+    "transactionFilter",
+    "engagementCalculation",
+    "engagementFilter",
+    "programGroupSorter",
+    "collaboratorGroupStructure",
+    "payoutMethod",
+]
+TELLS = {"postConversionAction", "postAllocationAction"}
 
-client = siren.Siren(api_key=os.environ["SIREN_API_KEY"], base_url="https://cloud.example.com/siren/v1")
-answers = client.apps.request_handler(os.environ["SIREN_SIGNING_SECRET"])
 
-@answers.on("postConversionAction", "tell-the-crm")
-def tell_the_crm(request):
-    # Siren may send it twice, so add it once, keyed by request.id.
-    add_to_crm(request.id, request.data["conversion"], request.data["reward"])
+def snippet(name: str, language: str = "python") -> str:
+    found = re.search(r"<!-- readme-test: " + re.escape(name) + r" -->\n```" + language + r"\n(.*?)```", README, re.S)
+    assert found, f"README has no {language} snippet named {name}"
+    return found.group(1)
 
-app = Flask(__name__)
-app.add_url_rule("/siren", view_func=answers.flask, methods=["POST"])
-'''
 
-SAMPLE_5_2 = '''@answers.on("postAllocationAction", "note-the-share")
-def note_the_share(request):
-    # Siren may send it twice, so note it once, keyed by request.id.
-    note_share(request.id, request.data["allocation"])
-'''
+FIRST = snippet("handler-flask")
+FIRST_FUNCTION = FIRST[FIRST.index("@answers.on(") : FIRST.index("app = Flask")]
 
-SAMPLE_5_3 = '''@answers.on("distributionResolver", "split-by-score")
-def split_by_score(request):
-    pool, metrics = request.data["pool"], request.data["metrics"]
-    # Whole currency steps, never more than the pool, split evenly when every score is 0.
-    shares = client.apps.split_pool(pool, {m["metricId"]: m["score"] for m in metrics})
-    return {"outcome": "allocated", "units": pool["units"], "shares": shares}
-'''
 
-SAMPLE_5_4 = '''@answers.on("incentiveResolver", "split-the-reward")
-def split_the_reward(request):
-    pool, conversions = request.data["pool"], request.data["conversions"]
-    rewards = client.apps.split_pool(pool, {c["conversionId"]: c["score"] for c in conversions})
-    return {"outcome": "rewards", "units": pool["units"], "rewards": rewards}
-'''
+def sample(kind: str) -> str:
+    """The first sample with the kind's function in place of its own."""
+    return FIRST.replace(FIRST_FUNCTION, snippet(f"fn-{kind}") + "\n")
 
-SAMPLE_AWARD = '''@answers.on("incentiveType", "pay-on-closed-deals")
-def pay_on_closed_deals(request):
-    sale, ids = request.data["transaction"], [e["engagementId"] for e in request.data["engagements"]]
-    if not sale or sale["units"] != request.data["program"]["units"]:
-        return {"outcome": "none"}  # A lead earns nothing here.
-    return {"outcome": "award", "units": sale["units"], "pool": sale["total"] // 10, "engagementIds": ids}
-'''
 
-SAMPLE_GROUP_ORDER = '''@answers.on("programGroupSorter", "pick-the-program")
-def pick_the_program(request):
-    # Try the program whose best engagement scores highest first.
-    best = {p["id"]: max([0] + [e["score"] for e in p["engagements"]]) for p in request.data["programs"]}
-    return {"outcome": "sorted", "programIds": sorted(best, key=best.get, reverse=True)}
-'''
+def test_every_kind_siren_offers_has_a_section():
+    assert sorted(KINDS) == sorted(CONTRACTS["kinds"])
+    assert {kind.value for kind in siren.AppItemKind} - set(KINDS) == {"customEvent"}
 
-FUNCTION_5_1 = SAMPLE_5_1[SAMPLE_5_1.index('@answers.on("postConversionAction"') : SAMPLE_5_1.index("app = Flask")]
 
-SAMPLES = {
-    "postConversionAction": SAMPLE_5_1,
-    "postAllocationAction": SAMPLE_5_1.replace(FUNCTION_5_1, SAMPLE_5_2 + "\n"),
-    "distributionResolver": SAMPLE_5_1.replace(FUNCTION_5_1, SAMPLE_5_3 + "\n"),
-    "incentiveResolver": SAMPLE_5_1.replace(FUNCTION_5_1, SAMPLE_5_4 + "\n"),
-    "incentiveType": SAMPLE_5_1.replace(FUNCTION_5_1, SAMPLE_AWARD + "\n"),
-    "programGroupSorter": SAMPLE_5_1.replace(FUNCTION_5_1, SAMPLE_GROUP_ORDER + "\n"),
-}
+def test_the_first_sample_holds_the_post_conversion_function():
+    assert FIRST_FUNCTION == snippet("fn-postConversionAction") + "\n"
+
+
+@pytest.mark.parametrize("kind", KINDS)
+def test_each_sample_is_ten_to_sixteen_lines(kind):
+    assert 10 <= len(sample(kind).splitlines()) <= 16
+
+
+@pytest.mark.parametrize("kind", KINDS)
+def test_the_readme_question_is_what_siren_sends(kind):
+    assert json.loads(snippet(f"question-{kind}", "json")) == CONTRACTS["kinds"][kind]["request"]["data"]
 
 
 @pytest.fixture(autouse=True)
@@ -121,7 +122,78 @@ def signed_delivery(kind: str):
     return body, headers
 
 
-@pytest.mark.parametrize("kind", list(SAMPLES))
+def keeps_the_rules(kind: str, question: Dict[str, Any], answer: Dict[str, Any]) -> None:
+    """The rules each kind's section states, which Siren refuses an answer
+    for breaking with 422 app_answer_invalid."""
+
+    def whole(value: Any) -> bool:
+        return isinstance(value, int) and not isinstance(value, bool) and value >= 0
+
+    def fields(typed: Any) -> None:
+        assert set(answer) <= set(typed.__annotations__), (kind, sorted(answer))
+
+    outcome = answer["outcome"]
+    if kind == "distributionResolver":
+        fields(siren.AppDistributionAnswer)
+        pool = question["pool"]
+        step = 10 ** (pool["currency"]["scale"] - pool["currency"]["decimalPlaces"])
+        assert outcome == "allocated" and answer["units"] == pool["units"]
+        assert set(answer["shares"]) == {str(m["metricId"]) for m in question["metrics"]}
+        assert all(whole(v) and v % step == 0 for v in answer["shares"].values())
+        assert sum(answer["shares"].values()) <= pool["value"]
+    elif kind == "incentiveResolver":
+        fields(siren.AppRewardAnswer)
+        pool = question["pool"]
+        assert outcome == "rewards" and answer["units"] == pool["units"]
+        assert set(answer["rewards"]) == {str(c["conversionId"]) for c in question["conversions"]}
+        assert all(v is None or (whole(v) and v <= pool["value"]) for v in answer["rewards"].values())
+    elif kind == "incentiveType":
+        if outcome == "none":
+            assert answer == {"outcome": "none"}
+        else:
+            fields(siren.AppIncentiveTypeAwardAnswer)
+            ids = answer["engagementIds"]
+            assert outcome == "award" and answer["units"] == question["program"]["units"] and whole(answer["pool"])
+            assert ids and len(set(ids)) == len(ids) and set(ids) <= {e["engagementId"] for e in question["engagements"]}
+    elif kind in ("metricCalculation", "engagementCalculation"):
+        if kind == "engagementCalculation":
+            fields(siren.AppEngagementCalculationAnswer)
+        results = answer["results"]
+        assert outcome == ("scores" if kind == "metricCalculation" else "engagements") and len(results) <= 50
+        assert len({r["collaboratorId"] for r in results}) == len(results)
+        assert all(whole(r["score"]) for r in results)
+    elif kind in ("metricFilter", "engagementFilter"):
+        if kind == "engagementFilter":
+            fields(siren.AppEngagementFilterAnswer)
+        assert outcome in ("allow", "suppress")
+        if outcome == "suppress":
+            assert isinstance(answer["reason"], str) and 1 <= len(answer["reason"]) <= 200
+    elif kind == "transactionFilter":
+        fields(siren.AppTransactionFilterAnswer)
+        include = answer["include"]
+        assert outcome == "filtered" and len(set(include)) == len(include)
+        assert set(include) <= {line["id"] for line in question["lines"]}
+    elif kind == "programGroupSorter":
+        fields(siren.AppGroupOrderAnswer)
+        assert outcome == "sorted" and sorted(answer["programIds"]) == sorted(p["id"] for p in question["programs"])
+    elif kind == "collaboratorGroupStructure":
+        fields(siren.AppCollaboratorGroupChain if answer["shape"] == "chain" else siren.AppCollaboratorGroupTree)
+        members = sorted(m["collaboratorId"] for m in question["members"])
+        assert outcome == "structure"
+        if answer["shape"] == "chain":
+            assert sorted(answer["order"]) == members
+        else:
+            assert sorted(int(k) for k in answer["parents"]) == members
+    elif kind == "payoutMethod":
+        if outcome == "paid":
+            assert set(answer) == {"outcome", "reference"} and 1 <= len(answer["reference"]) <= 191
+        else:
+            assert outcome == "failed" and set(answer) == {"outcome", "reason"} and len(answer["reason"]) <= 500
+    else:  # pragma: no cover
+        raise AssertionError(f"no rules for {kind}")
+
+
+@pytest.mark.parametrize("kind", KINDS)
 def test_each_sample_answers_siren_as_its_kind_needs(kind, monkeypatch):
     import respx
 
@@ -139,14 +211,24 @@ def test_each_sample_answers_siren_as_its_kind_needs(kind, monkeypatch):
         answered.set()
         return httpx.Response(200, json={"status": "accepted"})
 
+    def stub(name: str, result: Any = None):
+        def stand_in(*args: Any) -> Any:
+            stubbed.append((name,) + args)
+            return result
+
+        return stand_in
+
     with respx.mock(base_url=CONTRACTS["apiBase"], assert_all_called=False) as siren_api:
         siren_api.post(f"/apps/requests/{CONTRACTS['requestKey']}/answer").mock(side_effect=answer_route)
         scope: Dict[str, Any] = {
             "__name__": "sample",
-            "add_to_crm": lambda *args: stubbed.append(args),
-            "note_share": lambda *args: stubbed.append(args),
+            "add_to_crm": stub("add_to_crm"),
+            "note_share": stub("note_share"),
+            "is_refunded": stub("is_refunded", True),
+            "is_staff": stub("is_staff", True),
+            "pay_once": stub("pay_once", {"ok": True, "id": "acme-ledger-5521"}),
         }
-        exec(compile(SAMPLES[kind], f"sample-{kind}", "exec"), scope)
+        exec(compile(sample(kind), f"README sample for {kind}", "exec"), scope)
         server = make_server("127.0.0.1", 0, scope["app"], handler_class=Quiet)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
@@ -158,30 +240,27 @@ def test_each_sample_answers_siren_as_its_kind_needs(kind, monkeypatch):
             replied.set()
 
             assert (status, reply) == (200, {})
-            expected = CONTRACTS["kinds"][kind]["answer"]
-            if expected is None:
-                data = CONTRACTS["kinds"][kind]["request"]["data"]
+            data = CONTRACTS["kinds"][kind]["request"]["data"]
+            if kind in TELLS:
                 if kind == "postConversionAction":
-                    assert stubbed == [(CONTRACTS["requestKey"], data["conversion"], data["reward"])]
+                    assert stubbed == [("add_to_crm", CONTRACTS["requestKey"], data["conversion"], data["reward"])]
                 else:
-                    assert stubbed == [(CONTRACTS["requestKey"], data["allocation"])]
+                    assert stubbed == [("note_share", CONTRACTS["requestKey"], data["allocation"])]
                 assert posted == []
             else:
                 assert answered.wait(5)
+                expected = json.loads(snippet(f"answer-{kind}", "json"))
                 assert posted == [{"auth": f"Bearer {APP_KEY}", "body": expected}]
+                keeps_the_rules(kind, data, expected)
         finally:
             server.shutdown()
             server.server_close()
             thread.join(5)
 
 
-def test_each_sample_is_ten_to_sixteen_lines():
-    for kind, sample in SAMPLES.items():
-        assert 10 <= len(sample.splitlines()) <= 16, kind
-
-
-@pytest.mark.parametrize(
-    "sample", [SAMPLE_5_1, SAMPLE_5_2, SAMPLE_5_3, SAMPLE_5_4, SAMPLE_AWARD, SAMPLE_GROUP_ORDER], ids=["5.1", "5.2", "5.3", "5.4", "award", "group order"]
-)
-def test_the_readme_carries_each_sample_word_for_word(sample):
-    assert sample in (ROOT / "README.md").read_text()
+@pytest.mark.parametrize("kind", sorted(set(KINDS) - TELLS - {"metricCalculation", "engagementCalculation"}))
+def test_the_readme_answer_is_the_one_siren_and_its_screens_show(kind):
+    """Siren's feature page shows the fixture's answer. The two calculation
+    samples score only the collaborator who triggered, so their answers are
+    held by the run above instead."""
+    assert json.loads(snippet(f"answer-{kind}", "json")) == CONTRACTS["kinds"][kind]["answer"]

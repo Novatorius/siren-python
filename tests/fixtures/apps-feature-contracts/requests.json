@@ -21,6 +21,30 @@
     "askSends": 3
   },
   "kinds": {
+    "payoutMethod": {
+      "item": { "key": "acme-ledger", "id": "app:12" },
+      "request": {
+        "version": 1,
+        "id": "apr_9c60190a4501399d0ae55f041c237b39",
+        "type": "app.request",
+        "mode": "ask",
+        "app": "acme-crm",
+        "item": { "kind": "payoutMethod", "key": "acme-ledger", "id": "app:12" },
+        "createdAt": "2026-11-17T12:20:03+00:00",
+        "answerBy": "2026-11-17T13:20:03+00:00",
+        "answerUrl": "https://cloud.example.com/siren/v1/apps/requests/apr_9c60190a4501399d0ae55f041c237b39/answer",
+        "data": {
+          "payout": { "id": 88, "fulfillmentId": 31, "attempt": 1 },
+          "amount": {
+            "value": 2500,
+            "units": "USD",
+            "currency": { "id": "USD", "symbol": "$", "position": "before", "name": "US Dollar", "scale": 2, "decimalPlaces": 2, "type": "monetary" }
+          },
+          "collaborator": { "id": 42, "name": "Ana Ruiz", "email": "ana@example.com" }
+        }
+      },
+      "answer": { "outcome": "paid", "reference": "acme-ledger-5521" }
+    },
     "incentiveResolver": {
       "item": { "key": "split-the-reward", "id": "app:10" },
       "request": {
@@ -141,6 +165,103 @@
       },
       "answer": { "outcome": "allocated", "units": "USD", "shares": { "41": 6000, "43": 4000 } }
     },
+    "metricCalculation": {
+      "item": { "key": "visit-score", "id": "app:11" },
+      "request": {
+        "version": 1,
+        "id": "apr_9c60190a4501399d0ae55f041c237b39",
+        "type": "app.request",
+        "mode": "ask",
+        "app": "acme-crm",
+        "item": { "kind": "metricCalculation", "key": "visit-score", "id": "app:11" },
+        "createdAt": "2026-11-17T12:20:03+00:00",
+        "answerBy": "2026-11-17T13:20:03+00:00",
+        "answerUrl": "https://cloud.example.com/siren/v1/apps/requests/apr_9c60190a4501399d0ae55f041c237b39/answer",
+        "data": {
+          "distributor": { "id": 2, "name": "Partner leaderboard" },
+          "distribution": { "id": 21, "periodEnd": "2026-12-01T00:00:00+00:00" },
+          "metricType": "referredSiteVisit",
+          "distributorMetricTypeId": 55,
+          "triggeringCollaborator": { "id": 42, "name": "Riley Rep" },
+          "opportunityId": 615,
+          "points": null,
+          "cause": { "id": "9f2c4e1a7b3d5c60", "type": null, "causeId": null },
+          "sale": null
+        }
+      },
+      "answer": { "outcome": "scores", "results": [{ "collaboratorId": 42, "score": 10 }, { "collaboratorId": 57, "score": 2 }] }
+    },
+    "metricFilter": {
+      "item": { "key": "refund-check", "id": "app:12" },
+      "request": {
+        "version": 1,
+        "id": "apr_9c60190a4501399d0ae55f041c237b39",
+        "type": "app.request",
+        "mode": "ask",
+        "app": "acme-crm",
+        "item": { "kind": "metricFilter", "key": "refund-check", "id": "app:12" },
+        "createdAt": "2026-11-17T12:20:03+00:00",
+        "answerBy": "2026-11-17T13:20:03+00:00",
+        "answerUrl": "https://cloud.example.com/siren/v1/apps/requests/apr_9c60190a4501399d0ae55f041c237b39/answer",
+        "data": {
+          "distributor": { "id": 2, "name": "Partner leaderboard" },
+          "distribution": { "id": 21 },
+          "collaborator": { "id": 42, "name": "Riley Rep" },
+          "metricType": "awardedSale",
+          "opportunityId": 615,
+          "points": null,
+          "cause": { "id": "4b7e0c9d2a1f3e58", "type": "transaction", "causeId": "3307" },
+          "sale": { "transactionId": 3307, "conversionId": 1042, "excludedLineIds": [] }
+        }
+      },
+      "answer": { "outcome": "suppress", "reason": "The order was refunded within 30 days." }
+    },
+    "engagementCalculation": {
+      "item": { "key": "visit-weight", "id": "app:21" },
+      "request": {
+        "version": 1,
+        "id": "apr_9c60190a4501399d0ae55f041c237b39",
+        "type": "app.request",
+        "mode": "ask",
+        "app": "acme-crm",
+        "item": { "kind": "engagementCalculation", "key": "visit-weight", "id": "app:21" },
+        "createdAt": "2026-11-17T12:20:03+00:00",
+        "answerBy": "2026-11-17T13:20:03+00:00",
+        "answerUrl": "https://cloud.example.com/siren/v1/apps/requests/apr_9c60190a4501399d0ae55f041c237b39/answer",
+        "data": {
+          "program": { "id": 3, "name": "Partner program" },
+          "engagementType": "referredSiteVisit",
+          "programEngagementTypeId": 55,
+          "args": { "weight": "2" },
+          "opportunity": { "id": 615, "customerId": 77 },
+          "triggeringCollaborator": { "id": 42, "name": "Riley Rep" },
+          "cause": { "id": "9f2c4e1a7b3d5c60", "event": "referredSiteVisit", "occurredAt": "2026-11-17T12:20:00+00:00" }
+        }
+      },
+      "answer": { "outcome": "engagements", "results": [{ "collaboratorId": 42, "score": 10 }, { "collaboratorId": 57, "score": 2 }] }
+    },
+    "engagementFilter": {
+      "item": { "key": "staff-check", "id": "app:22" },
+      "request": {
+        "version": 1,
+        "id": "apr_9c60190a4501399d0ae55f041c237b39",
+        "type": "app.request",
+        "mode": "ask",
+        "app": "acme-crm",
+        "item": { "kind": "engagementFilter", "key": "staff-check", "id": "app:22" },
+        "createdAt": "2026-11-17T12:20:03+00:00",
+        "answerBy": "2026-11-17T13:20:03+00:00",
+        "answerUrl": "https://cloud.example.com/siren/v1/apps/requests/apr_9c60190a4501399d0ae55f041c237b39/answer",
+        "data": {
+          "program": { "id": 3, "name": "Partner program" },
+          "collaborator": { "id": 42, "name": "Riley Rep" },
+          "opportunity": { "id": 615, "customerId": 77 },
+          "engagementType": "referredSiteVisit",
+          "cause": { "id": "4b7e0c9d2a1f3e58", "event": "referredSiteVisit", "occurredAt": "2026-11-17T12:20:00+00:00" }
+        }
+      },
+      "answer": { "outcome": "suppress", "reason": "The visitor works for the partner." }
+    },
     "incentiveType": {
       "item": { "key": "pay-on-closed-deals", "id": "app:16" },
       "request": {
@@ -199,6 +320,64 @@
         }
       },
       "answer": { "outcome": "sorted", "programIds": [9, 12] }
+    },
+    "transactionFilter": {
+      "item": { "key": "plan-lines", "id": "app:13" },
+      "request": {
+        "version": 1,
+        "id": "apr_9c60190a4501399d0ae55f041c237b39",
+        "type": "app.request",
+        "mode": "ask",
+        "app": "acme-crm",
+        "item": { "kind": "transactionFilter", "key": "plan-lines", "id": "app:13" },
+        "createdAt": "2026-11-17T12:20:03+00:00",
+        "answerBy": "2026-11-17T13:20:03+00:00",
+        "answerUrl": "https://cloud.example.com/siren/v1/apps/requests/apr_9c60190a4501399d0ae55f041c237b39/answer",
+        "data": {
+          "for": { "type": "program", "id": 3, "name": "Partner program" },
+          "transaction": { "id": 3307, "units": "USD", "currency": { "id": "USD", "symbol": "$", "position": "before", "name": "US Dollar", "scale": 2, "decimalPlaces": 2, "type": "monetary" } },
+          "lines": [
+            { "id": 5501, "type": "lineItem", "name": "Annual plan", "quantity": 1, "value": 1500, "productId": null },
+            { "id": 5502, "type": "discount", "name": "Welcome discount", "quantity": 1, "value": -300, "productId": null }
+          ],
+          "distribution": null,
+          "refundDistribution": null
+        }
+      },
+      "answer": { "outcome": "filtered", "include": [5501] }
+    },
+    "collaboratorGroupStructure": {
+      "item": { "key": "team-tree", "id": "app:17" },
+      "request": {
+        "version": 1,
+        "id": "apr_9c60190a4501399d0ae55f041c237b39",
+        "type": "app.request",
+        "mode": "ask",
+        "app": "acme-crm",
+        "item": { "kind": "collaboratorGroupStructure", "key": "team-tree", "id": "app:17" },
+        "createdAt": "2026-11-17T12:20:03+00:00",
+        "answerBy": "2026-11-17T13:20:03+00:00",
+        "answerUrl": "https://cloud.example.com/siren/v1/apps/requests/apr_9c60190a4501399d0ae55f041c237b39/answer",
+        "data": {
+          "group": { "id": 4, "name": "Northeast team" },
+          "members": [
+            { "collaboratorId": 63, "name": "Dana Director", "status": "active", "metadata": { "rank": 1 } },
+            { "collaboratorId": 57, "name": "Morgan Manager", "status": "active", "metadata": { "rank": 2 } },
+            { "collaboratorId": 42, "name": "Riley Rep", "status": "active", "metadata": { "rank": 3 } }
+          ],
+          "for": { "type": "distributor", "id": 2 },
+          "distributor": { "id": 2, "name": "Partner leaderboard" },
+          "distribution": { "id": 21, "periodEnd": "2026-12-01T00:00:00+00:00" },
+          "metricType": "referredSiteVisit",
+          "distributorMetricTypeId": 55,
+          "triggeringCollaborator": { "id": 42, "name": "Riley Rep" },
+          "opportunityId": 615,
+          "points": null,
+          "cause": { "id": "9f2c4e1a7b3d5c60", "type": null, "causeId": null },
+          "sale": null
+        }
+      },
+      "answer": { "outcome": "structure", "shape": "chain", "order": [63, 57, 42] }
     }
   }
 }
