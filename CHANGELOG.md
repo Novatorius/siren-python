@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Types for the three kinds that had none: `AppMetricCalculationQuestion`
+  and `AppMetricCalculationAnswer` for the metric calculation
+  (`metricCalculation`), `AppMetricFilterQuestion` and `AppMetricFilterAnswer`
+  for the customer filter for distributors (`metricFilter`), with
+  `AppMetricCause` and `AppMetricSale`, and `AppPayoutQuestion`,
+  `AppPayoutPaid`, `AppPayoutFailed` and `AppPayoutAnswer` for the payout
+  method (`payoutMethod`). Each matches the Node SDK's type of the same name
+  and the question Siren builds.
 - `events.ingest()` sends an app's custom event with a short-lived app
   token in place of the key, as Siren takes only that app's token at the
   event's address. The client trades the app's key for a token

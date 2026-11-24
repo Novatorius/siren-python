@@ -498,6 +498,80 @@ AppIncentiveTypeAnswer = Union[AppIncentiveTypeAwardAnswer, AppIncentiveTypeNone
 """The answer to an ``incentiveType`` ask."""
 
 
+class AppMetricCause(TypedDict):
+    """What caused a metric, in a metric ask. ``id`` is the metric event's
+    key. For a sale, ``type`` is ``transaction`` and ``causeId`` the
+    transaction id as text. Both are ``None`` when the cause has no record."""
+
+    id: str
+    type: Optional[str]
+    causeId: Optional[str]
+
+
+class AppMetricSale(TypedDict):
+    """The sale behind a metric, in a metric ask. ``excludedLineIds`` lists
+    the sale's lines the metric leaves out."""
+
+    transactionId: int
+    conversionId: Optional[int]
+    excludedLineIds: List[int]
+
+
+class AppMetricCalculationQuestion(TypedDict):
+    """``metricCalculation`` (an ask): score one metric for a distributor's
+    period. ``distributor`` and ``triggeringCollaborator`` hold ``id`` and
+    ``name``, and ``distribution`` holds ``id`` and ``periodEnd``, an ISO
+    8601 time. ``distributorMetricTypeId`` is the distributor's metric type
+    row that picks the calculation. ``opportunityId`` and ``points`` may be
+    ``None``, and ``sale`` is ``None`` when no sale caused the metric."""
+
+    distributor: Dict[str, Any]
+    distribution: Dict[str, Any]
+    metricType: str
+    distributorMetricTypeId: int
+    triggeringCollaborator: Dict[str, Any]
+    opportunityId: Optional[int]
+    points: Optional[int]
+    cause: AppMetricCause
+    sale: Optional[AppMetricSale]
+
+
+class AppMetricCalculationAnswer(TypedDict):
+    """Who scores and how much: at most 50 results, each collaborator once,
+    each in the organization and not in the trash, and each score a whole
+    number of 0 or more. An empty list scores nobody. ``outcome`` is
+    ``scores``."""
+
+    outcome: Literal["scores"]
+    results: List[Dict[str, int]]
+
+
+class AppMetricFilterQuestion(TypedDict):
+    """``metricFilter`` (an ask): whether one ``collaborator``'s metric
+    counts for a distributor. ``distributor`` and ``collaborator`` hold
+    ``id`` and ``name``, and ``distribution`` holds ``id``.
+    ``opportunityId`` and ``points`` may be ``None``, and ``sale`` is
+    ``None`` when no sale caused the metric."""
+
+    distributor: Dict[str, Any]
+    distribution: Dict[str, Any]
+    collaborator: Dict[str, Any]
+    metricType: str
+    opportunityId: Optional[int]
+    points: Optional[int]
+    cause: AppMetricCause
+    sale: Optional[AppMetricSale]
+
+
+class AppMetricFilterAnswer(TypedDict, total=False):
+    """``outcome`` is ``allow``, which counts the metric, or ``suppress``,
+    which drops it. A suppress gives a plain text ``reason`` of 1 to 200
+    characters."""
+
+    outcome: str
+    reason: str
+
+
 class AppEngagementCause(TypedDict):
     """The trigger behind an engagement ask. ``id`` is the trigger's own
     random id, ``event`` the engagement type that fired, and ``occurredAt``
@@ -729,6 +803,41 @@ class AppCollaboratorGroupTree(TypedDict):
 AppCollaboratorGroupStructureAnswer = Union[AppCollaboratorGroupChain, AppCollaboratorGroupTree]
 """The answer to a ``collaboratorGroupStructure`` ask, a chain or a tree.
 Siren refuses one that breaks the rules with 422 ``app_answer_invalid``."""
+
+
+class AppPayoutQuestion(TypedDict):
+    """``payoutMethod`` (an ask): pay one payout. ``payout`` holds ``id``,
+    ``fulfillmentId`` and ``attempt``, which starts at 1 and rises when Siren
+    asks again about the same payout. ``amount`` is what to pay, a stored
+    whole number in the currency's smallest unit. ``collaborator`` holds
+    ``id``, ``name`` and ``email``, which is ``None`` when they have none.
+    Pay each payout id at most once, and when Siren asks again about a
+    payout the app already paid, answer ``paid`` with the first reference."""
+
+    payout: Dict[str, int]
+    amount: AppAmount
+    collaborator: Dict[str, Any]
+
+
+class AppPayoutPaid(TypedDict):
+    """The payout was paid. ``reference`` is the payment's id in the app's
+    own system, 1 to 191 characters."""
+
+    outcome: Literal["paid"]
+    reference: str
+
+
+class AppPayoutFailed(TypedDict):
+    """The app couldn't pay. ``reason`` says why in plain words, 1 to 500
+    characters, and Siren marks the payout failed."""
+
+    outcome: Literal["failed"]
+    reason: str
+
+
+AppPayoutAnswer = Union[AppPayoutPaid, AppPayoutFailed]
+"""The answer to a ``payoutMethod`` ask: paid with a reference, or failed
+with a reason."""
 
 
 class AppConversionActionData(TypedDict):

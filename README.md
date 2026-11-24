@@ -556,8 +556,9 @@ The program's attribution model divides the pool among them.
 Siren's documentation calls this a calculation strategy. A distributor's metric type
 picks it. Siren asks the app who scores, and how much, each time a metric
 triggers. The metric scores nothing until the answer, and the distribution it
-lands in waits for the answer before it pays anyone. The SDK has no typed
-class for this question yet. It looks like this:
+lands in waits for the answer before it pays anyone. The question is an
+`AppMetricCalculationQuestion`, and the answer an
+`AppMetricCalculationAnswer`. It looks like this:
 
 <!-- readme-test: question-metricCalculation -->
 ```json
@@ -603,8 +604,9 @@ nobody.
 
 Siren's documentation calls this a metric filter. A distributor picks it. Siren asks
 the app whether a metric may score each time one triggers, after the
-distributor's built-in filters allow it. The SDK has no typed class for this
-question yet. It looks like this:
+distributor's built-in filters allow it. The question is an
+`AppMetricFilterQuestion`, and the answer an `AppMetricFilterAnswer`. It
+looks like this:
 
 <!-- readme-test: question-metricFilter -->
 ```json
@@ -861,8 +863,9 @@ member's id, or to `None` for a top member, with no cycle:
 An autofulfiller picks it for one of the currencies the feature's
 `currencies` setting names. Siren asks the app to pay a payout after payouts
 are made, and when someone sends or retries one. The payout shows as
-processing until the answer. The SDK has no typed class for this question
-yet. It looks like this:
+processing until the answer. The question is an `AppPayoutQuestion`, and the
+answer an `AppPayoutAnswer`, either `AppPayoutPaid` or `AppPayoutFailed`. It
+looks like this:
 
 <!-- readme-test: question-payoutMethod -->
 ```json
