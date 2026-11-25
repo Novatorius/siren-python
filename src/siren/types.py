@@ -6,7 +6,7 @@ import json
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, Generic, Iterator, List, Literal, Mapping, Optional, Tuple, TypedDict, TypeVar, Union
+from typing import Any, Dict, Generic, Iterator, List, Literal, Mapping, Optional, Tuple, TypedDict, TypeVar, Union, get_args
 
 
 class WebhookEventType(str, Enum):
@@ -1305,15 +1305,20 @@ with a reason."""
 
 # Requests as Siren's request routes list them.
 
-#: The statuses of a request Siren sent an app
-#: (lib/Apps/Core/Models/AppRequest.php). A tell ends at ``delivered``. An
-#: ask ends at ``applied``, once its answer has done its work.
-#: ``needs_attention`` waits for a person or a late answer. An ask that
-#: holds a reward ends at ``dropped`` when the app didn't answer within 24
-#: hours.
-APP_REQUEST_STATUSES: Tuple[str, ...] = (
-    "pending", "sent", "delivered", "answered", "applied", "needs_attention", "dropped",
-)
+AppRequestStatus = Literal[
+    "pending", "sent", "delivered", "answered", "applying", "applied", "needs_attention", "dropped",
+]
+"""A status of a request Siren sent an app, one of
+:data:`APP_REQUEST_STATUSES`."""
+
+#: The statuses of a request Siren sent an app, the ``STATUS_*`` constants
+#: in lib/Apps/Core/Models/AppRequest.php. A tell ends at ``delivered``. An
+#: ask is ``answered`` until Siren applies the answer, ``applying`` while it
+#: does, and ends at ``applied``. An ``applying`` row whose ``applyLease``
+#: has passed is an apply that stopped, and Siren's next run takes it over.
+#: ``needs_attention`` waits for a person or a late answer. An ask ends at
+#: ``dropped`` when Siren stopped waiting for it or a person set it aside.
+APP_REQUEST_STATUSES: Tuple[AppRequestStatus, ...] = get_args(AppRequestStatus)
 
 
 class AppRequestSubject(TypedDict):
@@ -1338,7 +1343,7 @@ class AppRequestRecord(TypedDict, total=False):
     mode: str
     test: bool
     subject: AppRequestSubject
-    status: str
+    status: AppRequestStatus
     sendCount: int
     answerBy: Optional[str]
     applyLease: Optional[str]

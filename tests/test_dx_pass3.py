@@ -460,9 +460,9 @@ def test_a_bad_request_id_is_refused_before_sending(client, mocked_api, method):
 
 
 def test_the_statuses_are_sirens():
-    # lib/Apps/Core/Models/AppRequest.php on Siren feat/apps.
+    # lib/Apps/Core/Models/AppRequest.php on Siren feat/apps 0383186437.
     assert siren.APP_REQUEST_STATUSES == (
-        "pending", "sent", "delivered", "answered", "applied", "needs_attention", "dropped",
+        "pending", "sent", "delivered", "answered", "applying", "applied", "needs_attention", "dropped",
     )
 
 

@@ -6,7 +6,7 @@ import os
 from typing import Optional
 
 from ._client import (
-    DEFAULT_BASE_URL,
+    default_base_url,
     DEFAULT_MAX_RETRIES,
     DEFAULT_TIMEOUT,
     HttpClient,
@@ -37,9 +37,10 @@ class Siren:
         api_key: Your API key. An app uses its own key, which Siren showed
             once when it made the app. Read from ``SIREN_API_KEY`` when not
             passed.
-        base_url: The Siren API address. Siren Cloud's,
-            ``https://api.sirenaffiliates.com/siren/v1``, by default. Set it
-            only for a local or sandbox Siren.
+        base_url: The Siren API address. Read from ``SIREN_BASE_URL`` when
+            not passed, which ``siren apps apply`` writes for a sandbox, and
+            Siren Cloud's, ``https://api.sirenaffiliates.com/siren/v1``,
+            without either.
         timeout: Request timeout in seconds. Defaults to 30.
         max_retries: Retry count for network errors and 429/5xx responses,
             with exponential backoff. Defaults to 2. Applies to idempotent
@@ -51,12 +52,14 @@ class Siren:
         self,
         api_key: Optional[str] = None,
         *,
-        base_url: str = DEFAULT_BASE_URL,
+        base_url: Optional[str] = None,
         timeout: float = DEFAULT_TIMEOUT,
         max_retries: int = DEFAULT_MAX_RETRIES,
     ) -> None:
         if api_key is None:
             api_key = os.environ.get("SIREN_API_KEY") or None
+        if base_url is None:
+            base_url = default_base_url()
         if not api_key or not isinstance(api_key, str):
             raise ValueError(
                 "siren.Siren() needs an API key. Pass api_key, or set SIREN_API_KEY. "

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import time
 from typing import Any, Mapping, Optional, Union
 
@@ -11,6 +12,11 @@ from ._version import __version__
 from .errors import ConnectionError, RateLimitError, SirenError, error_from_response
 
 DEFAULT_BASE_URL = "https://api.sirenaffiliates.com/siren/v1"
+
+
+def default_base_url() -> str:
+    """``SIREN_BASE_URL`` when set and not empty, else Siren Cloud's."""
+    return os.environ.get("SIREN_BASE_URL") or DEFAULT_BASE_URL
 DEFAULT_TIMEOUT = 30.0
 DEFAULT_MAX_RETRIES = 2
 

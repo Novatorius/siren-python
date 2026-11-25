@@ -107,8 +107,9 @@ once when it made the app, or pass them as `siren.Siren(api_key=...)` and
 `request_handler(signing_secret)`. The handler posts an ask's answer with the
 app's key.
 
-The client talks to Siren Cloud. Pass `base_url` only for a local or sandbox
-Siren. An ask names the address Siren wants its answer at, and the handler
+The client talks to Siren Cloud, or to the Siren in `SIREN_BASE_URL` when
+it's set, which `siren apps apply` writes for a sandbox. A `base_url` passed
+in code wins. An ask names the address Siren wants its answer at, and the handler
 refuses an ask from any other Siren than the client's with a 500, and tells
 `on_error` both addresses and the `base_url` to set. The answer only ever goes
 to the client's own address, never to one a request names.
@@ -453,7 +454,9 @@ next release.
 
 1. With a sandbox key, one that starts `sk_test_`, run `siren apps apply`.
    On a sandbox it declares the app with no `url` and writes the app's key,
-   `SIREN_API_KEY`, to `.env.sandbox`. An app with no address has no signing
+   `SIREN_API_KEY`, and the sandbox's address, `SIREN_BASE_URL`, to
+   `.env.sandbox`. The client reads `SIREN_BASE_URL`, so the handler posts a
+   sandbox ask's answer to the sandbox. An app with no address has no signing
    secret yet.
 2. In its own terminal, run `siren listen --forward-to localhost:3000/siren`
    and leave it open. When it opens a session it writes the signing secret,
@@ -1255,8 +1258,9 @@ client.apps.requests.resend(request["id"])
 
 `list()` sends `GET /apps/requests` and returns the latest 50, newest first,
 each a `siren.AppRequestRecord`. `status` is one of
-`siren.APP_REQUEST_STATUSES`: `pending`, `sent`, `delivered`, `answered`,
-`applied`, `needs_attention` and `dropped`. `retrieve()` sends
+`siren.APP_REQUEST_STATUSES`, typed `siren.AppRequestStatus`: `pending`,
+`sent`, `delivered`, `answered`, `applying`, `applied`, `needs_attention` and
+`dropped`. `retrieve()` sends
 `GET /apps/requests/{id}` and returns a `siren.AppRequestDetail`, which adds
 the `data` Siren sent, the `answer` it took and who answered by hand.
 

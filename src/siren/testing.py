@@ -34,7 +34,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Mapping, Optional, Tuple, Union
 
-from ._client import DEFAULT_BASE_URL
+from ._client import default_base_url
 from .apps import REQUEST_EVENT, _REQUEST_ID
 from .errors import AppHandlerError
 from .types import APP_KINDS
@@ -123,7 +123,7 @@ def app_request(
     secret: Optional[str] = None,
     id: Optional[str] = None,  # noqa: A002 - the request's own field name
     app: str = "my-app",
-    base_url: str = DEFAULT_BASE_URL,
+    base_url: Optional[str] = None,
     timestamp: Optional[int] = None,
     test: bool = False,
 ) -> AppTestRequest:
@@ -135,8 +135,8 @@ def app_request(
       default.
     - ``id`` is the request key, a new ``apr_`` id by default.
     - ``base_url`` is the Siren the request comes from. An ask's
-      ``answerUrl`` is built on it, and Siren Cloud's address is the default,
-      as it is the client's.
+      ``answerUrl`` is built on it. It defaults as the client's does, to
+      ``SIREN_BASE_URL`` and then Siren Cloud's address.
     - ``timestamp`` is the signed time in Unix seconds, now by default.
     - ``test=True`` builds a test request, as ``siren trigger ask`` makes
       Siren send: the body carries ``"test": true`` after ``mode``, and the
@@ -173,7 +173,7 @@ def app_request(
     body["createdAt"] = made.isoformat()
     if body["mode"] == "ask":
         body["answerBy"] = (made + timedelta(hours=1)).isoformat()
-        body["answerUrl"] = f"{base_url.rstrip('/')}/apps/requests/{request_id}/answer"
+        body["answerUrl"] = f"{(base_url or default_base_url()).rstrip('/')}/apps/requests/{request_id}/answer"
     body["data"] = question
     return _request(body, signing_secret, t)
 
@@ -254,7 +254,7 @@ def app_request_from_record(
     key: Optional[str] = None,
     secret: Optional[str] = None,
     app: Optional[str] = None,
-    base_url: str = DEFAULT_BASE_URL,
+    base_url: Optional[str] = None,
     timestamp: Optional[int] = None,
 ) -> AppTestRequest:
     """A request Siren stored, as a test input: the same id, kind, mode,
@@ -323,7 +323,7 @@ def app_request_from_record(
     if mode == "ask":
         answer_by = row.get("answerBy")
         body["answerBy"] = answer_by if isinstance(answer_by, str) else (made + timedelta(hours=1)).isoformat()
-        body["answerUrl"] = f"{base_url.rstrip('/')}/apps/requests/{request_id}/answer"
+        body["answerUrl"] = f"{(base_url or default_base_url()).rstrip('/')}/apps/requests/{request_id}/answer"
     data = row.get("data")
     body["data"] = dict(data) if isinstance(data, Mapping) else {}
     return _request(body, signing_secret, t)

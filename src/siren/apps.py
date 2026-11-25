@@ -30,6 +30,7 @@ from .types import (
     AppRequest,
     AppRequestDetail,
     AppRequestRecord,
+    AppRequestStatus,
     AppTell,
     RemovedAppFeature,
 )
@@ -278,7 +279,7 @@ class AppRequests:
     def __init__(self, client: HttpClient) -> None:
         self._client = client
 
-    def list(self, *, status: Optional[str] = None) -> "List[AppRequestRecord]":
+    def list(self, *, status: "Optional[AppRequestStatus]" = None) -> "List[AppRequestRecord]":
         """The organization's latest requests, newest first, at most 50,
         from ``GET /apps/requests``, with ``?status=`` when ``status`` is
         given. Retried as a read.

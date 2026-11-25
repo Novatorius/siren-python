@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
+- The client reads `SIREN_BASE_URL` as its default base URL, the way it
+  reads `SIREN_API_KEY`, and a `base_url` passed in code wins. `siren apps
+  apply` writes it to `.env.sandbox` for a sandbox, whose asks carry an
+  `answerUrl` on the sandbox host. A handler still pointed at Siren Cloud
+  refused those asks with 500. `siren.testing.app_request()` and
+  `app_request_from_record()` default to the same address. A shell that sets
+  `SIREN_BASE_URL` for something else now moves the client too.
+- `siren.APP_REQUEST_STATUSES` holds all eight of Siren's request statuses,
+  adding `applying`, the status of an ask whose answer Siren is applying.
+  It comes from the new `siren.AppRequestStatus` type, which
+  `AppRequestRecord.status` and `apps.requests.list(status=...)` use.
 - An `on_event` function is timed like a tell's. Past Siren's 8 seconds it
   reaches `on_error` as an `AppSlowTellError` named by the event's type, and
   `simulate()` returns it, as the PHP SDK already does. Siren delivers webhook

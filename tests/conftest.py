@@ -22,6 +22,13 @@ def mocked_api():
 
 
 @pytest.fixture(autouse=True)
+def no_base_url_from_the_shell(monkeypatch):
+    """A SIREN_BASE_URL in the shell would move every client. A test that
+    wants one sets it."""
+    monkeypatch.delenv("SIREN_BASE_URL", raising=False)
+
+
+@pytest.fixture(autouse=True)
 def no_sleep(monkeypatch):
     """Make retry backoff instantaneous, but record requested delays."""
     delays = []
