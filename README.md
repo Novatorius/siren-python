@@ -1263,6 +1263,12 @@ print(request["data"], request["answer"], request["answeredByUser"])
 client.apps.requests.resend(request["id"])
 ```
 
+`client.apps.requests.list(id_prefix="apr_9f2c")` finds requests by the
+start of their id, `apr_` and 4 to 32 hex characters, as the CLI prints an id
+short. Siren answers at most two of the organization's matches, newest
+first, so two rows mean the prefix fits more than one request. It takes no
+other param beside it.
+
 `list()` sends `GET /apps/requests` and returns the latest 50, newest first,
 each a `siren.AppRequestRecord`. It pages with `limit` (1 to 100) and
 `before`, a request id. A page with `before` holds only requests older than

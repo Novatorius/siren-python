@@ -51,6 +51,7 @@ MAX_ANSWER_BYTES = 16384
 REQUEST_EVENT = "app.request"
 
 _REQUEST_ID = re.compile(r"^apr_[0-9a-f]{32}$")
+_REQUEST_ID_PREFIX = re.compile(r"^apr_[0-9a-fA-F]{4,32}$")
 _HEX_SIGNATURE = re.compile(r"^[0-9a-fA-F]{64}$")
 _SIGNED_TIME = re.compile(r"^\d{1,15}$")
 
@@ -274,7 +275,7 @@ class AppRequests:
 
     #: The params :meth:`list` sends, the ones ``GET /apps/requests`` reads
     #: (ListAppRequests.php).
-    LIST_FILTERS: Tuple[str, ...] = ("status", "limit", "before")
+    LIST_FILTERS: Tuple[str, ...] = ("status", "limit", "before", "id_prefix")
 
     #: The most requests one page holds. Siren lists 50 when ``limit`` is absent.
     MAX_LIST_LIMIT = 100
@@ -288,6 +289,7 @@ class AppRequests:
         status: "Optional[AppRequestStatus]" = None,
         limit: Optional[int] = None,
         before: Optional[str] = None,
+        id_prefix: Optional[str] = None,
     ) -> "List[AppRequestRecord]":
         """The organization's latest requests, newest first, from
         ``GET /apps/requests``. Retried as a read.
@@ -299,16 +301,36 @@ class AppRequests:
           than it, so the last id of one page reads the next. Siren lists
           none for an id the organization has no request for.
 
+        - ``id_prefix`` finds requests by the start of their id, ``apr_`` and
+          4 to 32 hex characters, as the CLI prints an id short. Siren answers
+          at most 2 of the organization's matches, newest first, so 2 rows
+          mean the prefix fits more than one request and a longer one is
+          needed. Siren ignores the other params beside it, so they are
+          refused. It is sent as ``idPrefix``.
+
         Siren answers ``needs_attention`` whole, so ``limit`` or ``before``
         with it is refused, as in Node.
 
         Raises :class:`ValueError` before sending for a status outside
         :data:`~siren.APP_REQUEST_STATUSES`, a ``limit`` that is not a whole
-        number from 1 to 100, a ``before`` that is not a request id, or either
-        with ``needs_attention``, and
+        number from 1 to 100, a ``before`` that is not a request id, either
+        with ``needs_attention``, an ``id_prefix`` that is not the start of a
+        request id, or any other param with ``id_prefix``, and
         :class:`~siren.ApiError` when the 2xx body holds no list of requests
         in ``requests``.
         """
+        if id_prefix is not None:
+            if not isinstance(id_prefix, str) or not _REQUEST_ID_PREFIX.match(id_prefix):
+                raise ValueError(
+                    "apps.requests.list() takes an id_prefix of apr_ and 4 to 32 hex characters, the start of a "
+                    f"request id, and got {id_prefix!r}."
+                )
+            if status is not None or limit is not None or before is not None:
+                raise ValueError(
+                    "apps.requests.list() finds by id_prefix alone. Siren ignores status, limit and before beside "
+                    "it, so leave them out."
+                )
+            return self._rows({"idPrefix": id_prefix})
         if status is not None and status not in APP_REQUEST_STATUSES:
             raise ValueError(f"apps.requests.list() takes a status of {', '.join(APP_REQUEST_STATUSES)}.")
         if status == "needs_attention" and (limit is not None or before is not None):
@@ -331,6 +353,9 @@ class AppRequests:
                     f"before, and got {before!r}."
                 )
             params["before"] = before
+        return self._rows(params)
+
+    def _rows(self, params: Dict[str, Any]) -> "List[AppRequestRecord]":
         response = self._client.request("GET", "/apps/requests", params=params)
         body = parse_json(response)
         rows = body.get("requests") if isinstance(body, dict) else None

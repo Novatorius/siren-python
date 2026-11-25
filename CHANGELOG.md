@@ -130,6 +130,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `apps.requests.list(id_prefix="apr_9f2c")` finds requests by the start of
+  their id, `apr_` and 4 to 32 hex characters, sent as Siren's `idPrefix`.
+  Siren answers at most two matches. A bad prefix, or any other param beside
+  it, raises `ValueError` before sending.
 - `apps.requests.list()` pages with `limit` (1 to 100, 50 when absent) and
   `before`, a request id whose older requests the page holds, as Siren's
   `GET /apps/requests` now reads them. A bad `limit` or `before`, or either

@@ -15,7 +15,7 @@ BEFORE = "apr_" + "c" * 32
 
 
 def test_the_list_takes_limit_and_before():
-    assert AppRequests.LIST_FILTERS == ("status", "limit", "before")
+    assert AppRequests.LIST_FILTERS == ("status", "limit", "before", "id_prefix")
     assert AppRequests.MAX_LIST_LIMIT == 100
 
 
