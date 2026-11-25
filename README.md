@@ -1257,7 +1257,24 @@ client.apps.requests.resend(request["id"])
 ```
 
 `list()` sends `GET /apps/requests` and returns the latest 50, newest first,
-each a `siren.AppRequestRecord`. `status` is one of
+each a `siren.AppRequestRecord`. It pages with `limit` (1 to 100) and
+`before`, a request id. A page with `before` holds only requests older than
+that one, so the last id of a page reads the next. Siren ignores both for
+`needs_attention`, whose list comes whole:
+
+<!-- readme-test: requests-paging -->
+```python
+before = None
+while True:
+    page = client.apps.requests.list(limit=20, before=before)
+    if not page:
+        break
+    for row in page:
+        print(row["id"])
+    before = page[-1]["id"]
+```
+
+ `status` is one of
 `siren.APP_REQUEST_STATUSES`, typed `siren.AppRequestStatus`: `pending`,
 `sent`, `delivered`, `answered`, `applying`, `applied`, `needs_attention` and
 `dropped`. `retrieve()` sends

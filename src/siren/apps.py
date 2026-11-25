@@ -272,25 +272,59 @@ class AppRequests:
     :class:`~siren.ApiKeyNotAcceptedError`.
     """
 
-    #: The filters :meth:`list` sends, the one ``GET /apps/requests`` reads
+    #: The params :meth:`list` sends, the ones ``GET /apps/requests`` reads
     #: (ListAppRequests.php).
-    LIST_FILTERS: Tuple[str, ...] = ("status",)
+    LIST_FILTERS: Tuple[str, ...] = ("status", "limit", "before")
+
+    #: The most requests one page holds. Siren lists 50 when ``limit`` is absent.
+    MAX_LIST_LIMIT = 100
 
     def __init__(self, client: HttpClient) -> None:
         self._client = client
 
-    def list(self, *, status: "Optional[AppRequestStatus]" = None) -> "List[AppRequestRecord]":
-        """The organization's latest requests, newest first, at most 50,
-        from ``GET /apps/requests``, with ``?status=`` when ``status`` is
-        given. Retried as a read.
+    def list(
+        self,
+        *,
+        status: "Optional[AppRequestStatus]" = None,
+        limit: Optional[int] = None,
+        before: Optional[str] = None,
+    ) -> "List[AppRequestRecord]":
+        """The organization's latest requests, newest first, from
+        ``GET /apps/requests``. Retried as a read.
+
+        - ``status`` keeps one status, one of :data:`~siren.APP_REQUEST_STATUSES`.
+        - ``limit`` is how many a page holds, 1 to :attr:`MAX_LIST_LIMIT`.
+          Siren lists 50 without it.
+        - ``before`` is a request id. The page then holds only requests older
+          than it, so the last id of one page reads the next. Siren lists
+          none for an id the organization has no request for.
+
+        Siren ignores ``limit`` and ``before`` for ``needs_attention``, whose
+        list comes whole.
 
         Raises :class:`ValueError` before sending for a status outside
-        :data:`~siren.APP_REQUEST_STATUSES`, and :class:`~siren.ApiError`
-        when the 2xx body holds no list of requests in ``requests``.
+        :data:`~siren.APP_REQUEST_STATUSES`, a ``limit`` that is not a whole
+        number from 1 to 100, or a ``before`` that is not a request id, and
+        :class:`~siren.ApiError` when the 2xx body holds no list of requests
+        in ``requests``.
         """
         if status is not None and status not in APP_REQUEST_STATUSES:
             raise ValueError(f"apps.requests.list() takes a status of {', '.join(APP_REQUEST_STATUSES)}.")
-        params = {} if status is None else {"status": status}
+        params: Dict[str, Any] = {} if status is None else {"status": status}
+        if limit is not None:
+            if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= self.MAX_LIST_LIMIT:
+                raise ValueError(
+                    f"apps.requests.list() takes a limit that is a whole number from 1 to {self.MAX_LIST_LIMIT}, "
+                    f"and got {limit!r}."
+                )
+            params["limit"] = limit
+        if before is not None:
+            if not isinstance(before, str) or not _REQUEST_ID.match(before):
+                raise ValueError(
+                    "apps.requests.list() takes a before that is a request id, such as the last id of the page "
+                    f"before, and got {before!r}."
+                )
+            params["before"] = before
         response = self._client.request("GET", "/apps/requests", params=params)
         body = parse_json(response)
         rows = body.get("requests") if isinstance(body, dict) else None

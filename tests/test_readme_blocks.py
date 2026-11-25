@@ -149,6 +149,22 @@ def run_requests(api: respx.MockRouter) -> None:
     assert ROW["id"] in printed
 
 
+def run_requests_paging(api: respx.MockRouter) -> None:
+    older = dict(ROW, id="apr_" + "d" * 32)
+    listed = api.get("/apps/requests").mock(
+        side_effect=[
+            httpx.Response(200, json={"requests": [ROW]}),
+            httpx.Response(200, json={"requests": [older]}),
+            httpx.Response(200, json={"requests": []}),
+        ]
+    )
+    printed = _run("requests-paging", {"client": siren.Siren(api_key="sk_live_" + "a" * 64)})
+    pages = [call.request.url.params for call in listed.calls]
+    assert [page.get("limit") for page in pages] == ["20", "20", "20"]
+    assert [page.get("before") for page in pages] == [None, ROW["id"], older["id"]]
+    assert printed.split() == [ROW["id"], older["id"]]
+
+
 def run_record_sale(api: respx.MockRouter) -> None:
     sale = api.post("/event/sale").respond(200, json={"status": "created"}, headers={"X-Siren-OID": "4021"})
     printed = _run("record-sale", {})
@@ -324,6 +340,7 @@ def run_debug_lines(api: respx.MockRouter) -> None:
 RUN: Dict[str, Callable[..., None]] = {
     "typed": run_typed,
     "requests": run_requests,
+    "requests-paging": run_requests_paging,
     "record-sale": run_record_sale,
     "sale-items": run_sale_items,
     "refund-visit": run_refund_visit,
