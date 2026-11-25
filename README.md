@@ -1269,11 +1269,16 @@ short. Siren answers at most two of the organization's matches, newest
 first, so two rows mean the prefix fits more than one request. It takes no
 other param beside it.
 
+`client.apps.requests.list(app_id=12, status="needs_attention")` keeps to one
+app's requests, by the app's numeric id, on the plain list, a page of it and
+`needs_attention`. `app_id` alone lists that app's latest 50.
+
 `list()` sends `GET /apps/requests` and returns the latest 50, newest first,
 each a `siren.AppRequestRecord`. It pages with `limit` (1 to 100) and
 `before`, a request id. A page with `before` holds only requests older than
-that one, so the last id of a page reads the next. Siren answers
-`needs_attention` whole, so `list()` refuses `limit` or `before` with it:
+that one, so the last id of a page reads the next. `needs_attention` pages
+the same way on a Siren that reads `limit` and `before` there. An older Siren
+ignores both on that list and answers at most 50:
 
 <!-- readme-test: requests-paging -->
 ```python
@@ -1287,7 +1292,7 @@ while True:
     before = page[-1]["id"]
 ```
 
- `status` is one of
+`status` is one of
 `siren.APP_REQUEST_STATUSES`, typed `siren.AppRequestStatus`: `pending`,
 `sent`, `delivered`, `answered`, `applying`, `applied`, `needs_attention` and
 `dropped`. `retrieve()` sends

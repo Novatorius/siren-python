@@ -11,8 +11,11 @@ import httpx
 import pytest
 
 ROW = {"id": "apr_9f2c" + "0" * 28, "feature": "app:12", "status": "applied"}
-REFUSAL = "apps.requests.list() takes an id_prefix of apr_ and 4 to 32 hex characters, the start of a request id"
-ALONE = "apps.requests.list() finds by id_prefix alone. Siren ignores status, limit and before beside it, so leave them out."
+REFUSAL = "apps.requests.list() takes an id_prefix of apr_ and 4 to 32 hex characters, and got "
+ALONE = (
+    "apps.requests.list() takes id_prefix alone. Siren ignores status, limit, before and app_id beside it, "
+    "and answers at most two matches."
+)
 
 
 def test_id_prefix_reaches_the_query_and_returns_the_matches(client, mocked_api):
@@ -35,7 +38,7 @@ def test_a_bad_prefix_is_refused_before_sending(client, mocked_api, prefix):
     assert not route.called
 
 
-@pytest.mark.parametrize("other", [{"limit": 5}, {"before": "apr_" + "c" * 32}, {"status": "applied"}])
+@pytest.mark.parametrize("other", [{"limit": 5}, {"before": "apr_" + "c" * 32}, {"status": "applied"}, {"app_id": 12}])
 def test_another_param_beside_the_prefix_is_refused(client, mocked_api, other):
     route = mocked_api.get("/apps/requests").mock(return_value=httpx.Response(200, json={"requests": []}))
     with pytest.raises(ValueError) as refused:

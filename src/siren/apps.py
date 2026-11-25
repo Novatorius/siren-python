@@ -275,7 +275,7 @@ class AppRequests:
 
     #: The params :meth:`list` sends, the ones ``GET /apps/requests`` reads
     #: (ListAppRequests.php).
-    LIST_FILTERS: Tuple[str, ...] = ("status", "limit", "before", "id_prefix")
+    LIST_FILTERS: Tuple[str, ...] = ("status", "limit", "before", "id_prefix", "app_id")
 
     #: The most requests one page holds. Siren lists 50 when ``limit`` is absent.
     MAX_LIST_LIMIT = 100
@@ -290,6 +290,7 @@ class AppRequests:
         limit: Optional[int] = None,
         before: Optional[str] = None,
         id_prefix: Optional[str] = None,
+        app_id: Optional[int] = None,
     ) -> "List[AppRequestRecord]":
         """The organization's latest requests, newest first, from
         ``GET /apps/requests``. Retried as a read.
@@ -300,59 +301,57 @@ class AppRequests:
         - ``before`` is a request id. The page then holds only requests older
           than it, so the last id of one page reads the next. Siren lists
           none for an id the organization has no request for.
-
         - ``id_prefix`` finds requests by the start of their id, ``apr_`` and
           4 to 32 hex characters, as the CLI prints an id short. Siren answers
           at most 2 of the organization's matches, newest first, so 2 rows
           mean the prefix fits more than one request and a longer one is
           needed. Siren ignores the other params beside it, so they are
           refused. It is sent as ``idPrefix``.
+        - ``app_id`` keeps to one app's requests, by the app's numeric id, on
+          the plain list, a page of it and ``needs_attention``. It is sent as
+          ``appId``.
 
-        Siren answers ``needs_attention`` whole, so ``limit`` or ``before``
-        with it is refused, as in Node.
+        ``needs_attention`` pages with ``limit`` and ``before`` on a Siren from
+        pkt/apps-attention-paging. An older Siren ignores both there and
+        answers at most 50. The rules and their wording match Node's.
 
         Raises :class:`ValueError` before sending for a status outside
-        :data:`~siren.APP_REQUEST_STATUSES`, a ``limit`` that is not a whole
-        number from 1 to 100, a ``before`` that is not a request id, either
-        with ``needs_attention``, an ``id_prefix`` that is not the start of a
-        request id, or any other param with ``id_prefix``, and
+        :data:`~siren.APP_REQUEST_STATUSES`, an ``app_id`` that is not a whole
+        number of 1 or more, an ``id_prefix`` that is not the start of a
+        request id or has another param beside it, a ``limit`` that is not a
+        whole number from 1 to 100, or a ``before`` that is not a request id,
+        and
         :class:`~siren.ApiError` when the 2xx body holds no list of requests
         in ``requests``.
         """
+        method = "apps.requests.list()"
+        if status is not None and status not in APP_REQUEST_STATUSES:
+            raise ValueError(f"{method} takes a status of {', '.join(APP_REQUEST_STATUSES)}.")
+        if app_id is not None and (isinstance(app_id, bool) or not isinstance(app_id, int) or app_id < 1):
+            raise ValueError(f"{method} takes an app_id of a whole number of 1 or more, an app's id, and got {app_id!r}.")
         if id_prefix is not None:
             if not isinstance(id_prefix, str) or not _REQUEST_ID_PREFIX.match(id_prefix):
+                raise ValueError(f"{method} takes an id_prefix of apr_ and 4 to 32 hex characters, and got {id_prefix!r}.")
+            if status is not None or limit is not None or before is not None or app_id is not None:
+                # ListAppRequests answers idPrefix alone, with no paging, and ignores every other filter.
                 raise ValueError(
-                    "apps.requests.list() takes an id_prefix of apr_ and 4 to 32 hex characters, the start of a "
-                    f"request id, and got {id_prefix!r}."
-                )
-            if status is not None or limit is not None or before is not None:
-                raise ValueError(
-                    "apps.requests.list() finds by id_prefix alone. Siren ignores status, limit and before beside "
-                    "it, so leave them out."
+                    f"{method} takes id_prefix alone. Siren ignores status, limit, before and app_id beside it, "
+                    "and answers at most two matches."
                 )
             return self._rows({"idPrefix": id_prefix})
-        if status is not None and status not in APP_REQUEST_STATUSES:
-            raise ValueError(f"apps.requests.list() takes a status of {', '.join(APP_REQUEST_STATUSES)}.")
-        if status == "needs_attention" and (limit is not None or before is not None):
-            raise ValueError(
-                "apps.requests.list() pages the plain list only. Siren answers needs_attention whole, "
-                "so leave out limit and before."
-            )
-        params: Dict[str, Any] = {} if status is None else {"status": status}
+        if limit is not None and (isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= self.MAX_LIST_LIMIT):
+            raise ValueError(f"{method} takes a limit of a whole number from 1 to {self.MAX_LIST_LIMIT}, and got {limit!r}.")
+        if before is not None and (not isinstance(before, str) or not _REQUEST_ID.match(before)):
+            raise ValueError(f"{method} before needs a request id of apr_ and 32 lowercase hex characters, and got {before!r}.")
+        params: Dict[str, Any] = {}
+        if app_id is not None:
+            params["appId"] = app_id
         if limit is not None:
-            if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= self.MAX_LIST_LIMIT:
-                raise ValueError(
-                    f"apps.requests.list() takes a limit that is a whole number from 1 to {self.MAX_LIST_LIMIT}, "
-                    f"and got {limit!r}."
-                )
             params["limit"] = limit
         if before is not None:
-            if not isinstance(before, str) or not _REQUEST_ID.match(before):
-                raise ValueError(
-                    "apps.requests.list() takes a before that is a request id, such as the last id of the page "
-                    f"before, and got {before!r}."
-                )
             params["before"] = before
+        if status is not None:
+            params["status"] = status
         return self._rows(params)
 
     def _rows(self, params: Dict[str, Any]) -> "List[AppRequestRecord]":

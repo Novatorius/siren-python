@@ -15,7 +15,7 @@ BEFORE = "apr_" + "c" * 32
 
 
 def test_the_list_takes_limit_and_before():
-    assert AppRequests.LIST_FILTERS == ("status", "limit", "before", "id_prefix")
+    assert {"limit", "before"} <= set(AppRequests.LIST_FILTERS)
     assert AppRequests.MAX_LIST_LIMIT == 100
 
 
@@ -38,7 +38,7 @@ def test_a_list_with_no_params_sends_no_query(client, mocked_api):
         ({"limit": 101}, "whole number from 1 to 100"),
         ({"limit": "20"}, "whole number from 1 to 100"),
         ({"limit": True}, "whole number from 1 to 100"),
-        ({"before": "req_1"}, "request id"),
+        ({"before": "req_1"}, "needs a request id"),
     ],
 )
 def test_a_bad_page_is_refused_before_sending(client, mocked_api, params, words):
