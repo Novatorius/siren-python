@@ -299,17 +299,23 @@ class AppRequests:
           than it, so the last id of one page reads the next. Siren lists
           none for an id the organization has no request for.
 
-        Siren ignores ``limit`` and ``before`` for ``needs_attention``, whose
-        list comes whole.
+        Siren answers ``needs_attention`` whole, so ``limit`` or ``before``
+        with it is refused, as in Node.
 
         Raises :class:`ValueError` before sending for a status outside
         :data:`~siren.APP_REQUEST_STATUSES`, a ``limit`` that is not a whole
-        number from 1 to 100, or a ``before`` that is not a request id, and
+        number from 1 to 100, a ``before`` that is not a request id, or either
+        with ``needs_attention``, and
         :class:`~siren.ApiError` when the 2xx body holds no list of requests
         in ``requests``.
         """
         if status is not None and status not in APP_REQUEST_STATUSES:
             raise ValueError(f"apps.requests.list() takes a status of {', '.join(APP_REQUEST_STATUSES)}.")
+        if status == "needs_attention" and (limit is not None or before is not None):
+            raise ValueError(
+                "apps.requests.list() pages the plain list only. Siren answers needs_attention whole, "
+                "so leave out limit and before."
+            )
         params: Dict[str, Any] = {} if status is None else {"status": status}
         if limit is not None:
             if isinstance(limit, bool) or not isinstance(limit, int) or not 1 <= limit <= self.MAX_LIST_LIMIT:

@@ -132,8 +132,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `apps.requests.list()` pages with `limit` (1 to 100, 50 when absent) and
   `before`, a request id whose older requests the page holds, as Siren's
-  `GET /apps/requests` now reads them. A bad `limit` or `before` raises
-  `ValueError` before sending.
+  `GET /apps/requests` now reads them. A bad `limit` or `before`, or either
+  with `needs_attention`, which Siren answers whole, raises `ValueError`
+  before sending.
+- `siren.testing.app_request_from_record()` uses a `key` passed in over the
+  record's `featureKey`, as Node's `appRequestFromRecord()` does.
 - `request_handler(logger=...)` takes a `logging.Logger`, or anything with
   `debug`, `info`, `warning` and `error`, and is the `siren` logger by
   default. The handler writes one `debug` line per request it handled, such

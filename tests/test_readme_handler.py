@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import hmac
+import inspect
 import json
 import re
 import sys
@@ -281,23 +282,30 @@ def test_by_hand_snippet_checks_and_answers_once():
 def test_try_it_snippet_runs_as_a_pytest_file(siren_api):
     """The README's "Try it without Siren" tests, run against the first
     sample with the distribution resolver's function added, as the README
-    says. ``simulate()`` posts nothing, so the fake Siren sees no call."""
-    app = build(resolver=False)
+    says, in a real ``my_app`` module. ``simulate()`` posts nothing, so the
+    fake Siren sees no call, and the tell test swaps the CRM for a fake, so
+    the app's real ``add_to_crm`` never runs."""
+    head = HEAD[: HEAD.index("@answers.on(")]
+    tell = re.search(r'(@answers\.on\("postConversionAction".*?)\n\n', HEAD, re.S)
     function = re.search(r"<!-- readme-test: fn-distributionResolver -->\n```python\n(.*?)```", README, re.S)
-    assert function
-    exec(compile(function.group(1), "README.md", "exec"), app)
+    assert tell and function
+    real_crm: List[tuple] = []
     my_app = types.ModuleType("my_app")
-    my_app.answers = app["answers"]  # type: ignore[attr-defined]
+    my_app.__dict__["add_to_crm"] = lambda *row: real_crm.append(row)
+    exec(compile(head + tell.group(1) + "\n\n" + function.group(1), "README.md", "exec"), my_app.__dict__)
     sys.modules["my_app"] = my_app
     try:
         tests: Dict[str, Any] = {"__name__": "test_my_app"}
         exec(compile(snippet("try-it"), "README.md (try-it)", "exec"), tests)
+        ran = [name for name in tests if name.startswith("test_")]
+        assert ran == ["test_tells_the_crm", "test_splits_by_score"]
+        for name in ran:
+            wants = inspect.signature(tests[name]).parameters
+            with pytest.MonkeyPatch.context() as monkeypatch:
+                tests[name](*([monkeypatch] if "monkeypatch" in wants else []))
     finally:
         del sys.modules["my_app"]
-    ran = [name for name in tests if name.startswith("test_")]
-    assert ran == ["test_tells_the_crm", "test_splits_by_score"]
-    for name in ran:
-        tests[name]()
+    assert real_crm == [], "The README's pytest sample wrote to the real CRM."
     assert len(siren_api.calls) == 0
 
 

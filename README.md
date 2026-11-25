@@ -172,17 +172,23 @@ function raised, or the error for an ask's function that returned nothing.
 
 In a pytest file beside the app, with `SIREN_SIGNING_SECRET` set as for the
 app, and the distribution resolver from
-[Feature kinds](#distribution-resolver-distributionresolver) registered:
+[Feature kinds](#distribution-resolver-distributionresolver) registered.
+`simulate()` runs your function for real, so the tell test swaps the CRM for
+a fake:
 
 <!-- readme-test: try-it -->
 ```python
+import my_app  # the module that holds the handler and add_to_crm
 from siren.testing import app_request, sample_data
 
-from my_app import answers  # the module that holds the handler
+from my_app import answers
 
 
-def test_tells_the_crm():
+def test_tells_the_crm(monkeypatch):
+    added = []
+    monkeypatch.setattr(my_app, "add_to_crm", lambda *row: added.append(row))  # a fake CRM
     assert answers.simulate(app_request("postConversionAction", "tell-the-crm")).status == 200
+    assert len(added) == 1
 
 
 def test_splits_by_score():
@@ -256,8 +262,9 @@ siren apps requests <id> --json > request.json
 `record` is that file's text, or the same dict parsed. The file names the
 app and the feature's key, so the helper needs nothing else. Once the app is
 gone the file's `featureKey` is null, so pass `key`, which
-`siren apps show <app>` lists beside each feature. A raw request body, as
-your app logged it, names its key already.
+`siren apps show <app>` lists beside each feature. A `key` you pass wins over
+the saved one, so a request replays against a renamed feature. A raw request
+body, as your app logged it, names its key already.
 
 <!-- readme-test: replay -->
 ```python
@@ -1259,8 +1266,8 @@ client.apps.requests.resend(request["id"])
 `list()` sends `GET /apps/requests` and returns the latest 50, newest first,
 each a `siren.AppRequestRecord`. It pages with `limit` (1 to 100) and
 `before`, a request id. A page with `before` holds only requests older than
-that one, so the last id of a page reads the next. Siren ignores both for
-`needs_attention`, whose list comes whole:
+that one, so the last id of a page reads the next. Siren answers
+`needs_attention` whole, so `list()` refuses `limit` or `before` with it:
 
 <!-- readme-test: requests-paging -->
 ```python

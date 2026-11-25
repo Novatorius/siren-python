@@ -267,10 +267,11 @@ def app_request_from_record(
     session, or a raw request body as the app logged it. Either one parsed,
     or its JSON text. Siren refuses an app's key on that route.
 
-    - ``key`` is the feature's key when the record lacks one. The saved file
-      carries it as ``featureKey``, and a raw body in its ``feature``. Siren's
-      own row names its feature as ``app:12`` only, and the file's
-      ``featureKey`` is null once the app is gone, so pass the key
+    - ``key`` is the feature's key. A key passed in wins over the record's,
+      as in Node, so a request replays against a renamed feature. Without
+      one, the saved file's ``featureKey`` is used, or a raw body's
+      ``feature``. Siren's own row names its feature as ``app:12`` only, and
+      the file's ``featureKey`` is null once the app is gone, so pass the key
       ``siren apps show <app>`` lists beside the feature.
     - ``secret`` is the app's signing secret, ``SIREN_SIGNING_SECRET`` by
       default.
@@ -300,10 +301,12 @@ def app_request_from_record(
     if not isinstance(request_id, str) or not isinstance(kind, str) or mode not in ("ask", "tell"):
         raise ValueError(f"{method} needs the record's id, kind and mode, as `siren apps requests <id> --json` saves them.")
     saved_key = row.get("featureKey")
-    if isinstance(saved_key, str) and saved_key != "":
-        feature_key: Any = saved_key
+    if key is not None and key != "":
+        feature_key: Any = key
+    elif isinstance(saved_key, str) and saved_key != "":
+        feature_key = saved_key
     else:
-        feature_key = key if key is not None else envelope.get("key")
+        feature_key = envelope.get("key")
     if not isinstance(feature_key, str) or feature_key == "":
         gone = " Its featureKey is null, as when the app is gone." if "featureKey" in row else ""
         raise AppHandlerError(
