@@ -36,6 +36,7 @@ from typing import Any, Dict, Mapping, Optional, Tuple, Union
 
 from ._client import DEFAULT_BASE_URL
 from .apps import REQUEST_EVENT, _REQUEST_ID
+from .errors import AppHandlerError
 from .types import APP_KINDS
 
 __all__ = [
@@ -260,22 +261,26 @@ def app_request_from_record(
     ``test``, data and ``answerBy`` Siren sent, signed again so the
     handler's ``simulate()`` takes it.
 
-    ``record`` is what ``apps.requests.retrieve(id)`` answers (Siren's
-    ``GET /apps/requests/{id}``, ``AppRequestSerializer::toDetail()``), the
-    same row the command-line tool shows for ``siren apps requests <id>``, or
-    a raw request body as the app logged it. Either one parsed, or its JSON
-    text.
+    ``record`` is a stored request as Siren's ``GET /apps/requests/{id}``
+    answers it (``AppRequestSerializer::toDetail()``), such as the file
+    ``siren apps requests <id> --json > request.json`` saves with a signed-in
+    session, or a raw request body as the app logged it. Either one parsed,
+    or its JSON text. Siren refuses an app's key on that route.
 
-    - ``key`` is the feature's key. A stored row names its feature as
-      ``app:12`` only, so pass the key ``siren apps show <app>`` lists beside
-      the feature. A raw body names it already.
+    - ``key`` is the feature's key when the record lacks one. The saved file
+      carries it as ``featureKey``, and a raw body in its ``feature``. Siren's
+      own row names its feature as ``app:12`` only, and the file's
+      ``featureKey`` is null once the app is gone, so pass the key
+      ``siren apps show <app>`` lists beside the feature.
     - ``secret`` is the app's signing secret, ``SIREN_SIGNING_SECRET`` by
       default.
-    - ``app`` is the app's key, the record's ``app`` or ``my-app`` by default.
+    - ``app`` is the app's key: the file's ``appKey``, the record's ``app``
+      or ``my-app`` by default.
     - ``base_url`` and ``timestamp`` are as for :func:`app_request`.
 
     Raises :class:`ValueError` for a record that is not a stored request,
-    no key, and no secret.
+    and no secret. Raises :class:`~siren.AppHandlerError` for a stored row
+    with no ``key``, as the Node and PHP SDKs do.
     """
     method = "siren.testing.app_request_from_record()"
     row: Any = record
@@ -285,7 +290,7 @@ def app_request_from_record(
         except ValueError:
             raise ValueError(f"{method} takes a stored request as a dict or its JSON text, and this text is not JSON.") from None
     if not isinstance(row, Mapping):
-        raise ValueError(f"{method} takes a stored request as a dict, such as what apps.requests.retrieve(id) answers.")
+        raise ValueError(f"{method} takes a stored request as a dict, such as what `siren apps requests <id> --json` saves.")
     feature = row.get("feature")
     envelope: Mapping[str, Any] = feature if isinstance(feature, Mapping) else {}
     kind = envelope.get("kind", row.get("kind"))
@@ -293,11 +298,16 @@ def app_request_from_record(
     mode = row.get("mode")
     request_id = row.get("id")
     if not isinstance(request_id, str) or not isinstance(kind, str) or mode not in ("ask", "tell"):
-        raise ValueError(f"{method} needs the record's id, kind and mode, as apps.requests.retrieve(id) answers them.")
-    feature_key = key if key is not None else envelope.get("key")
+        raise ValueError(f"{method} needs the record's id, kind and mode, as `siren apps requests <id> --json` saves them.")
+    saved_key = row.get("featureKey")
+    if isinstance(saved_key, str) and saved_key != "":
+        feature_key: Any = saved_key
+    else:
+        feature_key = key if key is not None else envelope.get("key")
     if not isinstance(feature_key, str) or feature_key == "":
-        raise ValueError(
-            f"{method} needs the feature's key: the record names its feature as {feature_id}, without the key. "
+        gone = " Its featureKey is null, as when the app is gone." if "featureKey" in row else ""
+        raise AppHandlerError(
+            f"{method} needs the feature's key: the record names its feature as {feature_id}, without the key.{gone} "
             "Pass key, which `siren apps show <app>` lists beside each feature."
         )
     signing_secret = _secret(method, secret)
@@ -306,7 +316,8 @@ def app_request_from_record(
     body: Dict[str, Any] = {"version": 1, "id": request_id, "type": REQUEST_EVENT, "mode": mode}
     if row.get("test") is True:
         body["test"] = True
-    body["app"] = app if app is not None else (row["app"] if isinstance(row.get("app"), str) and row["app"] else "my-app")
+    saved_app = next((row[name] for name in ("appKey", "app") if isinstance(row.get(name), str) and row[name]), "my-app")
+    body["app"] = app if app is not None else saved_app
     body["feature"] = {"kind": kind, "key": feature_key, "id": feature_id if isinstance(feature_id, str) else "app:1"}
     body["createdAt"] = row["createdAt"] if isinstance(row.get("createdAt"), str) else made.isoformat()
     if mode == "ask":

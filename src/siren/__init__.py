@@ -39,7 +39,6 @@ from .errors import (
 )
 from .scopes import LEDGER_READ_SCOPES, ApiKeyScope, event_scope
 from .types import (
-    ApiKey,
     APP_KINDS,
     APP_REQUEST_KINDS,
     APP_REQUEST_STATUSES,
@@ -60,7 +59,11 @@ from .types import (
     AppMetricCause,
     AppMetricSale,
     AppRequest,
+    ApiKeyScopeEntry,
+    ApiKeyScopeGroups,
+    AppRecord,
     AppRequestDetail,
+    AppWithRawKey,
     AppRequestFeature,
     AppRequestRecord,
     AppRequestSubject,
@@ -138,6 +141,10 @@ __all__ = [
     "Siren",
     "BrowserTokenHandler",
     "AppFeatures",
+    "ApiKeyScopeEntry",
+    "ApiKeyScopeGroups",
+    "AppRecord",
+    "AppWithRawKey",
     "AppRequestHandler",
     "AppRequestReply",
     "AppSimulation",
@@ -167,7 +174,6 @@ __all__ = [
     "LEDGER_READ_SCOPES",
     "event_scope",
     # Types
-    "ApiKey",
     "APP_KINDS",
     "APP_REQUEST_KINDS",
     "APP_REQUEST_STATUSES",

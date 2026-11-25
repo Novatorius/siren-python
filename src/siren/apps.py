@@ -21,6 +21,9 @@ from ._client import HttpClient, parse_json
 from .errors import ApiError, AppHandlerError, AuthenticationError, ErrorCode, SignatureVerificationError
 from .types import (
     APP_REQUEST_STATUSES,
+    ApiKeyScopeGroups,
+    AppRecord,
+    AppWithRawKey,
     AppAnswerReceipt,
     AppAsk,
     AppFeature,
@@ -566,14 +569,121 @@ class AppFeatures:
         return cast("RemovedAppFeature", body)
 
 
+def _is_app(body: Any) -> bool:
+    return _is_object(body) and isinstance(body.get("key"), str) and isinstance(body.get("id"), int)
+
+
+def _checked_app(response: Any, route: str) -> "AppRecord":
+    body = parse_json(response)
+    if not _is_app(body):
+        raise ApiError(f"Siren answered {route} with a body that is not an app.", status_code=response.status_code, data=body)
+    return cast("AppRecord", body)
+
+
+def _with_raw_key(response: Any, route: str, then: str) -> "AppWithRawKey":
+    app = _checked_app(response, route)
+    raw_key = cast(Dict[str, Any], app).get("rawKey")
+    if not isinstance(raw_key, str) or raw_key == "":
+        raise ApiError(
+            f"Siren answered {route} with an app but no rawKey. Siren made the key by then. {then}",
+            status_code=response.status_code,
+            data=app,
+        )
+    return cast("AppWithRawKey", app)
+
+
 class Apps:
     """``siren.apps`` — check a request Siren signed and sent the app,
-    answer an ask through :attr:`requests`, and add, read, change and remove
-    one app's features through :attr:`features`."""
+    answer an ask through :attr:`requests`, add, read, change and remove one
+    app's features through :attr:`features`, and make, rotate and revoke an
+    app's key.
+
+    An app owns its key. Siren has no ``/api-keys`` routes, so a key is made
+    with :meth:`create_key` or ``siren apps apply``, and :meth:`scopes` lists
+    what it may hold.
+    """
 
     def __init__(self, client: HttpClient) -> None:
+        self._client = client
         self.requests = AppRequests(client)
         self.features = AppFeatures(client)
+
+    def scopes(self) -> "ApiKeyScopeGroups":
+        """The scopes an app's key may hold, grouped by resource
+        (``GET /apps/scopes``, ``ApiKeyScopePolicy::issuableGroups()``), each
+        a :class:`~siren.ApiKeyScopeEntry`. The same groups the API keys
+        screen offers. Retried as a read.
+
+        Takes a signed-in dashboard session, passed as the client's key.
+        Siren answers an API key with a 401 that the SDK raises as
+        :class:`~siren.ApiKeyNotAcceptedError`. Raises :class:`~siren.ApiError`
+        when the body is not an object of scope lists.
+        """
+        response = self._client.request("GET", "/apps/scopes")
+        body = parse_json(response)
+        fits = _is_object(body) and all(isinstance(group, list) and all(_is_object(entry) for entry in group) for group in body.values())
+        if not fits:
+            raise ApiError(
+                "Siren answered GET /apps/scopes with a body that is not an object of scope lists.",
+                status_code=response.status_code,
+                data=body,
+            )
+        return cast("ApiKeyScopeGroups", body)
+
+    def create_key(self, app: str, *, scopes: Optional[Sequence[str]] = None) -> "AppWithRawKey":
+        """Make a key for an app that has none (``POST /apps/{app}/key``),
+        sent once, holding ``scopes`` or none. Siren labels it "App: {name}"
+        and answers 201 with the app and its ``rawKey``, shown this once.
+
+        Takes a signed-in dashboard session, passed as the client's key, as
+        ``siren apps apply`` does. Raises :class:`ValueError` before sending
+        for a bad app key or ``scopes`` that is not a list of text. Siren
+        answers 409 ``app_key_exists`` when the app holds an active key, and
+        400 with ``limit`` when the organization holds its cap of keys.
+        Raises :class:`~siren.ApiError` when the answer lacks ``rawKey``:
+        Siren made the key by then, so rotate it to get one you can read.
+        """
+        method = "apps.create_key()"
+        path = f"{_app_path(app, method)}/key"
+        sent: Dict[str, Any] = {}
+        if scopes is not None:
+            if isinstance(scopes, (str, bytes)) or not all(isinstance(scope, str) for scope in scopes):
+                raise ValueError(f"{method} takes scopes as a list of text, such as ['ledger:payouts:read'].")
+            sent["scopes"] = [str(scope) for scope in scopes]
+        response = self._client.request("POST", path, json=sent, retryable=False)
+        return _with_raw_key(response, f"POST {path}", "Rotate it with apps.rotate_key() to get a new one.")
+
+    def rotate_key(self, app: str) -> "AppWithRawKey":
+        """Replace the app's key (``POST /apps/{app}/key/rotate``), sent
+        once. Siren revokes the old key first, then makes a new one with the
+        old label, scopes and store, and answers the app with ``rawKey``,
+        shown this once. The signing secret never changes with the key.
+
+        Takes a signed-in dashboard session, passed as the client's key, as
+        ``siren apps rotate-key`` does. Raises :class:`ValueError` before
+        sending for a bad app key. Siren answers 409 ``app_key_missing`` for
+        an app with no key. Raises :class:`~siren.ApiError` when the answer
+        lacks ``rawKey``: Siren rotated the key by then, so rotate again.
+        """
+        method = "apps.rotate_key()"
+        path = f"{_app_path(app, method)}/key/rotate"
+        response = self._client.request("POST", path, retryable=False)
+        return _with_raw_key(response, f"POST {path}", "Rotate it again to get one you can read.")
+
+    def revoke_key(self, app: str) -> "AppRecord":
+        """Revoke the app's key (``DELETE /apps/{app}/key``), sent once, and
+        return the app, which keeps its address.
+
+        Takes a signed-in dashboard session, passed as the client's key.
+        Raises :class:`ValueError` before sending for a bad app key. Siren
+        answers 409 ``app_key_missing`` for an app with no key,
+        ``app_needs_a_part`` for an app with no address, and
+        ``app_features_need_key_and_address`` for an app with features.
+        """
+        method = "apps.revoke_key()"
+        path = f"{_app_path(app, method)}/key"
+        response = self._client.request("DELETE", path, retryable=False)
+        return _checked_app(response, f"DELETE {path}")
 
     def request_handler(
         self,

@@ -5,12 +5,11 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
-from enum import Enum
-from typing import Any, Dict, List, Optional, Sequence, Union
+from typing import Any, Dict, List, Optional, Union
 
 from ._client import HttpClient, parse_json
 from .errors import SignatureVerificationError
-from .types import WebhookEvent, WebhookEventType, WebhookSubscription
+from .types import WebhookEvent, WebhookSubscription
 
 _SIGNATURE_PREFIX = "sha256="
 
@@ -25,50 +24,18 @@ def _to_bytes(value: Union[bytes, bytearray, str], name: str) -> bytes:
     raise TypeError(f"{name} must be bytes or str, got {type(value).__name__}")
 
 
-def _event_value(event: Union[str, WebhookEventType, Enum]) -> str:
-    return event.value if isinstance(event, Enum) else str(event)
-
-
 class WebhookSubscriptions:
-    """``siren.webhooks.subscriptions`` — manage webhook subscriptions.
+    """``siren.webhooks.subscriptions`` lists and removes webhook addresses.
 
-    These routes take an API key with a webhook scope, or a signed-in
-    dashboard session. ``webhook-subscriptions:read`` opens :meth:`list`, and
-    ``webhook-subscriptions:manage`` opens every method here. The key must be
-    organization-wide, because subscriptions are not kept by store. A key
-    bound to one store gets a :class:`~siren.StoreKeyNotAllowedError`.
+    These routes take a signed-in dashboard session, passed as the client's
+    key. Siren answers an API key with a 401 that the SDK raises as
+    :class:`~siren.ApiKeyNotAcceptedError`, since the webhook scopes are
+    retired. An address is an app's part, made with ``siren apps apply``,
+    because Siren has no ``POST /webhooks``.
     """
 
     def __init__(self, client: HttpClient) -> None:
         self._client = client
-
-    def create(
-        self,
-        *,
-        target_url: str,
-        events: Sequence[Union[str, WebhookEventType]],
-        description: Optional[str] = None,
-    ) -> WebhookSubscription:
-        """Create a subscription (``POST /webhooks``). Never auto-retried.
-
-        The returned subscription's ``signing_secret`` is provided **once** —
-        store it; it cannot be retrieved later. Pass
-        ``events=[WebhookEventType.ALL]`` (``["*"]``) to subscribe to everything.
-
-        Siren stores any event name it is given and does not check it against
-        its catalog, so a misspelled or retired name is accepted and never
-        delivered. :class:`WebhookEventType` lists the names Siren sends.
-        """
-        payload: dict = {
-            "targetUrl": target_url,
-            "events": [_event_value(event) for event in events],
-        }
-        if description is not None:
-            payload["description"] = description
-        response = self._client.request(
-            "POST", "/webhooks", json=payload, retryable=False
-        )
-        return WebhookSubscription.from_dict(parse_json(response) or {})
 
     def list(
         self, *, number: Optional[int] = None, offset: Optional[int] = None
@@ -109,8 +76,7 @@ class Webhooks:
     - ``X-Siren-Delivery`` — the event id (``evt_...``). It stays the same
       when Siren retries the delivery, so use it to drop repeats.
 
-    The body of a subscription made with ``subscriptions.create`` is the
-    event's payload alone, such as ``{"conversionId": 991}``. The event type
+    The body Siren sends an app's address is the event's payload alone, such as ``{"conversionId": 991}``. The event type
     travels only in ``X-Siren-Event``, so pass that header to
     :meth:`construct_event` as ``event_type``. A subscription that belongs to
     a connected site gets a versioned envelope instead, with ``type``,

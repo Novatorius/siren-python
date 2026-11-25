@@ -434,9 +434,9 @@ def _created_at(payload: Dict[str, Any]) -> Optional[str]:
 class WebhookSubscription:
     """A webhook subscription.
 
-    ``signing_secret`` is populated only on the response from
-    ``webhooks.subscriptions.create`` — it is returned exactly once and cannot
-    be retrieved later. ``raw`` holds the untouched API payload.
+    ``signing_secret`` is ``None`` on a listed subscription, since Siren shows
+    an address's secret once, when the app's address is made through
+    ``/apps``. ``raw`` holds the untouched API payload.
     """
 
     id: Optional[int] = None
@@ -464,44 +464,55 @@ class WebhookSubscription:
         )
 
 
-@dataclass(frozen=True)
-class ApiKey:
-    """An API key record.
+class ApiKeyScopeEntry(TypedDict):
+    """One scope an app's key may hold, as ``GET /apps/scopes`` lists it
+    (``ApiKeyScopeProviderService``)."""
 
-    ``raw_key`` (the plaintext ``sk_live_...`` credential) is populated only on
-    the response from ``api_keys.create`` — it is returned exactly once and
-    cannot be retrieved later. ``raw`` holds the untouched API payload.
-    """
+    scope: str
+    """The scope to give the key, such as ``ledger:payouts:read``."""
+    resource: str
+    """The group it belongs to, such as ``events`` or ``ledger``."""
+    action: str
+    """What it allows within the group, such as ``payouts:read``."""
+    label: str
+    """A readable description."""
 
-    id: Optional[int] = None
-    key_prefix: Optional[str] = None
-    label: Optional[str] = None
-    status: Optional[str] = None
-    scopes: List[str] = field(default_factory=list)
-    created_at: Optional[str] = None
-    expires_at: Optional[str] = None
-    last_used_at: Optional[str] = None
-    raw_key: Optional[str] = None
-    property_id: Optional[int] = None
-    revoked_at: Optional[str] = None
-    raw: Dict[str, Any] = field(default_factory=dict)
 
-    @classmethod
-    def from_dict(cls, payload: Dict[str, Any]) -> "ApiKey":
-        return cls(
-            id=payload.get("id"),
-            key_prefix=payload.get("keyPrefix"),
-            label=payload.get("label"),
-            status=payload.get("status"),
-            scopes=list(payload.get("scopes") or []),
-            created_at=_created_at(payload),
-            expires_at=payload.get("expiresAt"),
-            last_used_at=payload.get("lastUsedAt"),
-            raw_key=payload.get("rawKey"),
-            property_id=payload.get("propertyId"),
-            revoked_at=payload.get("revokedAt"),
-            raw=payload,
-        )
+#: The scopes an app's key may hold, grouped by resource, as
+#: ``GET /apps/scopes`` answers them (``ApiKeyScopePolicy::issuableGroups()``):
+#: ``events``, ``ledger`` and the ``records:`` groups.
+ApiKeyScopeGroups = Dict[str, List[ApiKeyScopeEntry]]
+
+
+class AppRecord(TypedDict, total=False):
+    """An app as Siren's ``/apps`` routes answer it (``AppSerializer``).
+    ``url`` and ``events`` are its address, ``scopes`` and ``apiKeyPrefix``
+    its key's, each ``None`` or empty when it has none."""
+
+    id: int
+    key: str
+    name: str
+    description: str
+    status: str
+    source: str
+    url: Optional[str]
+    events: List[str]
+    scopes: List[str]
+    apiKeyPrefix: Optional[str]
+    apiKey: Optional[Dict[str, Any]]
+    address: Optional[Dict[str, Any]]
+    features: List[Dict[str, Any]]
+    eventsAccess: Dict[str, Any]
+    needsAttention: int
+    dateCreated: Optional[str]
+    dateModified: Optional[str]
+
+
+class AppWithRawKey(AppRecord, total=False):
+    """An app with its new key's ``rawKey``, which Siren shows this once and
+    keeps only as a hash."""
+
+    rawKey: str
 
 
 @dataclass(frozen=True)

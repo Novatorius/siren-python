@@ -577,7 +577,7 @@ ROW = {
 
 
 def test_a_stored_row_needs_the_features_key():
-    with pytest.raises(ValueError) as raised:
+    with pytest.raises(siren.AppHandlerError) as raised:
         testing.app_request_from_record(ROW, secret=SECRET)
     assert str(raised.value) == (
         "siren.testing.app_request_from_record() needs the feature's key: the record names its feature as app:12, "

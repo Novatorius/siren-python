@@ -199,6 +199,19 @@ def run_subscriptions(api: respx.MockRouter) -> None:
     assert listed.called and removed.called
 
 
+def run_app_keys(api: respx.MockRouter) -> None:
+    app = {"id": 7, "key": "acme-payouts", "name": "Acme payouts", "scopes": ["ledger:payouts:read"]}
+    scopes = api.get("/apps/scopes").respond(200, json={"ledger": [{"scope": "ledger:payouts:read", "resource": "ledger", "action": "payouts:read", "label": "Read payouts"}]})
+    made = api.post("/apps/acme-payouts/key").respond(201, json=dict(app, rawKey="sk_live_" + "f" * 64))
+    rotated = api.post("/apps/acme-payouts/key/rotate").respond(200, json=dict(app, rawKey="sk_live_" + "e" * 64))
+    revoked = api.delete("/apps/acme-payouts/key").respond(200, json=dict(app, scopes=[], apiKeyPrefix=None))
+    printed = _run("app-keys", {"siren": siren, "SESSION_TOKEN": "session-token"})
+    assert printed.strip() == "sk_live_" + "f" * 64
+    assert json.loads(made.calls.last.request.content) == {"scopes": ["ledger:payouts:read"]}
+    assert made.calls.last.request.headers["Authorization"] == "Bearer session-token"
+    assert scopes.called and rotated.call_count == 1 and revoked.call_count == 1
+
+
 def run_store_scope(api: respx.MockRouter) -> None:
     listed = api.get("/conversions").respond(200, json={"items": [], "total": 0, "page": 1, "perPage": 50, "totalPages": 0})
     _run("store-scope", {"client": siren.Siren(api_key="sk_test")})
@@ -282,13 +295,18 @@ def run_on_event_test(api: respx.MockRouter) -> None:
 STORED = "apr_9f2c4e0b7a1d4c3e8b6f5a2d1c0e9b8a"
 
 
-def run_replay(api: respx.MockRouter) -> None:
-    row = dict(ROW, id=STORED, data=KINDS["distributionResolver"]["request"]["data"], answer=None, answeredByUser=None)
-    read = api.get(f"/apps/requests/{STORED}").respond(200, json=row)
+def run_replay(api: respx.MockRouter, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # The file `siren apps requests <id> --json > request.json` saves, read
+    # with a signed-in session (tests/fixtures/apps-cli/request.json). The
+    # block sends nothing.
+    saved = json.loads((Path(__file__).parent / "fixtures" / "apps-cli" / "request.json").read_text())
+    row = dict(saved, id=STORED, data=KINDS["distributionResolver"]["request"]["data"])
+    (tmp_path / "request.json").write_text(json.dumps(row))
+    monkeypatch.chdir(tmp_path)
     scope = _handler_scope()
     _run("typed", scope)
     printed = _run("replay", scope)
-    assert read.called
+    assert not api.calls
     assert printed.strip() == f"{KINDS['distributionResolver']['answer']} None"
 
 
@@ -312,6 +330,7 @@ RUN: Dict[str, Callable[..., None]] = {
     "webhook-flask": run_webhook_flask,
     "verify-signature": run_verify_signature,
     "subscriptions": run_subscriptions,
+    "app-keys": run_app_keys,
     "store-scope": run_store_scope,
     "reconciliation": run_reconciliation,
     "errors": run_errors,
@@ -326,7 +345,7 @@ RUN: Dict[str, Callable[..., None]] = {
 
 
 @pytest.mark.parametrize("name", sorted(RUN))
-def test_the_block_runs(name, monkeypatch):
+def test_the_block_runs(name, monkeypatch, tmp_path):
     monkeypatch.setenv("SIREN_API_KEY", "sk_live_" + "a" * 64)
     monkeypatch.setenv("SIREN_SIGNING_SECRET", SECRET)
     runner = RUN[name]
@@ -334,7 +353,10 @@ def test_the_block_runs(name, monkeypatch):
         runner()
         return
     with respx.mock(base_url=BASE_URL, assert_all_called=False, assert_all_mocked=True) as api:
-        runner(api)
+        if name == "replay":
+            run_replay(api, tmp_path, monkeypatch)
+        else:
+            runner(api)
 
 
 # The handler samples under mypy --strict, annotated as the README asks.

@@ -92,6 +92,8 @@ answers = client.apps.request_handler()  # reads SIREN_SIGNING_SECRET
 
 @answers.on("postConversionAction", "tell-the-crm")
 def tell_the_crm(request):
+    if request.test:  # a test request, as siren trigger ask sends: write nothing
+        return
     # Siren may send it twice, so add it once, keyed by request.id.
     add_to_crm(request.id, request.data["conversion"], request.data["reward"])
 
@@ -115,7 +117,10 @@ Each kind of feature changes only the function, as
 [Feature kinds](#feature-kinds) shows. The function gets a
 `siren.AppTell` or a `siren.AppAsk`, both kinds of `siren.AppRequest`: `request.id` is the request key, the same on every send,
 `request.data` is the question, `request.feature` holds the feature's `kind`
-and `key`, and `request.answer_by` is when Siren wants an ask's answer. A tell's
+and `key`, `request.is_ask` is true for an ask, `request.test` is true on a
+[test request](#test-requests), and `request.answer_by` is when Siren wants an
+ask's answer. A function that writes or pays returns early on a test request,
+as the one above does. A tell's
 function returns nothing. An ask's function returns the answer, or
 `answers.later()` when the app will answer by itself with
 `apps.requests.answer()`. An ask's function that returns nothing is an error,
@@ -200,8 +205,8 @@ catches it.
 #### Test requests
 
 `siren trigger ask <app> <feature>` makes Siren send a feature's sample
-request now, marked as a test with `"test": true`, on a sandbox or a live
-Siren. Your function reads it as `request.test`, which is `False` on every
+request now, marked as a test with `"test": true`. On a live Siren it needs
+`--live` and a yes, and it refuses a payout method. Your function reads it as `request.test`, which is `False` on every
 real request. Siren checks a test ask's answer by the kind's own rules and
 applies nothing. A handler must never move money or write records on a test
 request. Answer it as usual, so Siren checks the answer, and stop there, as
@@ -239,18 +244,28 @@ data yourself. `siren.testing.EVENT_TYPES` lists the rest.
 
 `app_request_from_record(record, key=None)` turns a request Siren stored into
 a test input, signed again with the same id, kind, mode, `test`, data and
-`answerBy`. `record` is what `client.apps.requests.retrieve(id)` answers, the
-row `siren apps requests <id>` shows, as a dict or its JSON text. That row
-names its feature as `app:12` without the key, so pass the key `siren apps
-show <app>` lists beside the feature. A raw request body, as your app logged
-it, names its key already.
+`answerBy`. Save the request with the command-line tool, which reads it with
+your signed-in session, since Siren refuses an app's key on that route.
+`--json` arrives with the tool's next release:
+
+```sh
+siren apps requests <id> --json > request.json
+```
+
+`record` is that file's text, or the same dict parsed. The file names the
+app and the feature's key, so the helper needs nothing else. Once the app is
+gone the file's `featureKey` is null, so pass `key`, which
+`siren apps show <app>` lists beside each feature. A raw request body, as
+your app logged it, names its key already.
 
 <!-- readme-test: replay -->
 ```python
+from pathlib import Path
+
 from siren.testing import app_request_from_record
 
-stored = client.apps.requests.retrieve("apr_9f2c4e0b7a1d4c3e8b6f5a2d1c0e9b8a")
-result = answers.simulate(app_request_from_record(stored, key="split-by-score"))
+stored = Path("request.json").read_text()
+result = answers.simulate(app_request_from_record(stored))
 print(result.answer, result.error)
 ```
 
@@ -432,20 +447,29 @@ happens to an answer after the reply.
 ## Develop on your machine
 
 Siren can send a sandbox app's requests to the handler on your laptop with no
-tunnel and no public address. `listen` and `trigger` arrive with the
-command-line tool's next release.
+tunnel and no public address. `listen` and `trigger`, and `siren apps apply`
+declaring a sandbox app with no `url`, arrive with the command-line tool's
+next release.
 
-1. Use a sandbox key, one that starts `sk_test_`. On a sandbox,
-   `siren apps apply` declares the app with no `url` and writes its key and
-   signing secret to `.env.sandbox`, which the handler reads.
-2. Start your app, then run `siren listen --forward-to localhost:3000/siren`.
-   While it runs, Siren sends that app's asks, tells and webhook events to
-   your handler, signed with the app's own secret, and prints each reply.
-   Your handler posts an ask's answer to Siren as it always does. Listening
-   works only on a sandbox Siren.
-3. In another terminal, `siren trigger ask <app> <feature>` sends a real
+1. With a sandbox key, one that starts `sk_test_`, run `siren apps apply`.
+   On a sandbox it declares the app with no `url` and writes the app's key,
+   `SIREN_API_KEY`, to `.env.sandbox`. An app with no address has no signing
+   secret yet.
+2. In its own terminal, run `siren listen --forward-to localhost:3000/siren`
+   and leave it open. When it opens a session it writes the signing secret,
+   `SIREN_SIGNING_SECRET`, to `.env.sandbox`. While it runs, Siren sends that
+   app's asks, tells and webhook events to your handler, signed with that
+   secret, and prints each reply. Your handler posts an ask's answer to Siren
+   as it always does. Listening works only on a sandbox Siren.
+3. Start your app with the file loaded. The client and handler read the
+   process environment only, so export the file's lines first:
+   `set -a; . ./.env.sandbox; set +a; flask --app app run --port 3000`, or
+   with python-dotenv, `dotenv -f .env.sandbox run -- flask --app app run --port 3000`.
+   Restart the app whenever `listen` says it saved a new secret.
+4. In another terminal, `siren trigger ask <app> <feature>` sends a real
    sample request for one feature through it, marked as a
-   [test request](#test-requests).
+   [test request](#test-requests). On a live Siren it needs `--live` and a
+   yes, and it refuses a payout method.
 
 The `siren` command ships with the Node package, and you don't need a Node
 project to run it. With Node installed, run any `siren` command this README
@@ -508,6 +532,8 @@ dollars is $15.00. The function is the one in the first sample:
 ```python
 @answers.on("postConversionAction", "tell-the-crm")
 def tell_the_crm(request):
+    if request.test:  # a test request, as siren trigger ask sends: write nothing
+        return
     # Siren may send it twice, so add it once, keyed by request.id.
     add_to_crm(request.id, request.data["conversion"], request.data["reward"])
 ```
@@ -534,6 +560,8 @@ stored whole number, so 6000 in US dollars is $60.00.
 ```python
 @answers.on("postAllocationAction", "note-the-share")
 def note_the_share(request):
+    if request.test:  # a test request, as siren trigger ask sends: write nothing
+        return
     # Siren may send it twice, so note it once, keyed by request.id.
     note_share(request.id, request.data["allocation"])
 ```
@@ -1423,9 +1451,26 @@ app's page in Siren Cloud. Run the `siren` CLI with npx, as
 [Develop on your machine](#develop-on-your-machine) says. Siren has no
 `POST /webhooks` and no `/api-keys` routes.
 
-The SDK reads and removes an app's address with a signed-in dashboard
-session's token, passed as `api_key`. No API key may call a webhook or apps
-route: Siren answers it with 401 and `error.code` `api_key_not_accepted`.
+The SDK does the same for an app's key, and reads and removes an app's
+address, with a signed-in dashboard session's token, passed as `api_key`.
+No API key may call a webhook or apps route: Siren answers it with 401 and
+`error.code` `api_key_not_accepted`.
+
+<!-- readme-test: app-keys -->
+```python
+client = siren.Siren(api_key=SESSION_TOKEN)
+
+groups = client.apps.scopes()  # what a key may hold, such as groups["ledger"]
+made = client.apps.create_key("acme-payouts", scopes=["ledger:payouts:read"])
+print(made["rawKey"])  # shown this once, so save it as the app's SIREN_API_KEY
+client.apps.rotate_key("acme-payouts")  # a new rawKey, and the old key stops working
+client.apps.revoke_key("acme-payouts")
+```
+
+`create_key()` makes a key for an app that has none, and Siren answers 409
+`app_key_exists` for one that has a key. Each call is sent once and never
+retried. This SDK has no call that makes or changes an app or its address, so
+use `siren apps apply` for those.
 
 <!-- readme-test: subscriptions -->
 ```python

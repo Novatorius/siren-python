@@ -1,4 +1,4 @@
-"""The scopes an API key may hold (``api_keys.create``)."""
+"""The scopes an app's key may hold (``apps.create_key``)."""
 
 from __future__ import annotations
 
@@ -7,29 +7,25 @@ from typing import Tuple
 
 
 class ApiKeyScope(str, Enum):
-    """The named scopes an API key may be given.
+    """The named scopes an app's key may be given. ``apps.scopes()`` lists
+    every scope Siren offers.
 
     A key sends events with event scopes: ``ALL_EVENTS`` (``event:*``), or
     :func:`event_scope` for one event type. ``FULL_ACCESS`` (``*``) is still
     accepted and grants what ``ALL_EVENTS`` grants.
 
-    A key also reads the ledger and manages webhook subscriptions:
+    ``LEDGER_CONVERSIONS_READ``, ``LEDGER_TRANSACTIONS_READ``,
+    ``LEDGER_OBLIGATIONS_READ`` and ``LEDGER_PAYOUTS_READ`` open ``list()``
+    on ``conversions``, ``transactions``, ``obligations`` and ``payouts``,
+    and Siren's read by id on each.
 
-    - ``LEDGER_CONVERSIONS_READ``, ``LEDGER_TRANSACTIONS_READ``,
-      ``LEDGER_OBLIGATIONS_READ`` and ``LEDGER_PAYOUTS_READ`` open ``list()``
-      on ``conversions``, ``transactions``, ``obligations`` and ``payouts``,
-      and Siren's read by id on each.
-    - ``WEBHOOK_SUBSCRIPTIONS_READ`` lists subscriptions, reads one, and reads
-      the event catalog and a subscription's deliveries.
-    - ``WEBHOOK_SUBSCRIPTIONS_MANAGE`` does all of that, and creates, changes
-      and deletes subscriptions and sends a test delivery
-      (``POST /webhooks/{id}/test``).
-
-    Siren grants each of these six only by its exact name. ``*``,
+    Siren grants the ledger scopes only by their exact names. ``*``,
     ``event:*``, wildcards such as ``ledger:*``, and older names such as
     ``conversions:read`` grant none of them, and Siren refuses those older
-    names on a new key with a 400. No scope reaches API key management,
-    which takes a signed-in dashboard session.
+    names on a new key with a 400. The webhook scopes
+    (``webhook-subscriptions:read`` and ``:manage``) are retired and open
+    nothing. No scope reaches an app's key or address, which take a
+    signed-in dashboard session.
     """
 
     ALL_EVENTS = "event:*"
@@ -41,8 +37,6 @@ class ApiKeyScope(str, Enum):
     LEDGER_TRANSACTIONS_READ = "ledger:transactions:read"
     LEDGER_OBLIGATIONS_READ = "ledger:obligations:read"
     LEDGER_PAYOUTS_READ = "ledger:payouts:read"
-    WEBHOOK_SUBSCRIPTIONS_READ = "webhook-subscriptions:read"
-    WEBHOOK_SUBSCRIPTIONS_MANAGE = "webhook-subscriptions:manage"
 
     def __str__(self) -> str:
         return self.value

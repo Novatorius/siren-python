@@ -14,12 +14,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `simulate()` returns it, as the PHP SDK already does. Siren delivers webhook
   events with the same 8-second timeout, so a slower function ran twice
   without a word.
-- The README no longer documents `api_keys` or
-  `webhooks.subscriptions.create`. Siren answers `/api-keys` with 404 and
-  `POST /webhooks` with 405, because an API key and a webhook address are
-  parts of an app, made through `/apps` with `siren apps apply`. It no longer
-  lists the retired `webhook-subscriptions` scopes as opening anything. The
-  methods stay until the SDK's resources follow Siren's routes.
+- `client.api_keys` (`create`, `list`, `revoke`), the `ApiKey` type and
+  `webhooks.subscriptions.create` are gone, with `ApiKeyScope`'s retired
+  `WEBHOOK_SUBSCRIPTIONS_READ` and `WEBHOOK_SUBSCRIPTIONS_MANAGE`. Siren
+  answers `/api-keys` with 404 and `POST /webhooks` with 405, because an API
+  key and a webhook address are parts of an app. Make an app with its key and
+  address with `siren apps apply`. Make, rotate and revoke its key with the
+  new `apps.create_key()`, `apps.rotate_key()` and `apps.revoke_key()`
+  (`POST`, `POST .../rotate` and `DELETE /apps/{app}/key`), or
+  `siren apps rotate-key`. List the scopes a key may hold with the new
+  `apps.scopes()` (`GET /apps/scopes`), typed `ApiKeyScopeGroups`. Change an
+  address with `siren apps apply` too, since this SDK has no `apps.update`
+  yet. Each takes a signed-in session. `webhooks.subscriptions.list()` and
+  `delete()` stay.
+- `siren.testing.app_request_from_record()` raises `AppHandlerError`, not
+  `ValueError`, for a stored row with no feature key, as the Node and PHP
+  SDKs do. It reads the file `siren apps requests <id> --json` saves, and
+  takes the app and feature keys from its `appKey` and `featureKey`, so a
+  replay needs no `key` until the app is gone.
 - The request handler hands a refused signature to `on_error` as a
   `SignatureVerificationError`, with `None` for the request, where it
   replied 401 and said nothing. The reply is still 401. A custom `on_error`

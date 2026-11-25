@@ -242,7 +242,7 @@ def test_empty_context_leaves_data_none(mocked_api):
 
 
 def test_bad_request_without_failed_validations_has_no_field_errors(mocked_api):
-    mocked_api.post("/api-keys").respond(
+    mocked_api.post("/apps/acme-payouts/key").respond(
         400,
         json={
             "error": {
@@ -253,7 +253,7 @@ def test_bad_request_without_failed_validations_has_no_field_errors(mocked_api):
     )
 
     with pytest.raises(siren.BadRequestError) as excinfo:
-        _no_retry_client().api_keys.create(label="x", scopes=["programs:read"])
+        _no_retry_client().apps.create_key("acme-payouts", scopes=["programs:read"])
 
     assert excinfo.value.field_errors == []
     assert excinfo.value.data == {"field": "scopes", "scope": "programs:read"}

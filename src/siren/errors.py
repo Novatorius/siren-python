@@ -124,7 +124,7 @@ class ApiKeyNotAcceptedError(AuthenticationError):
     """401 with ``code`` ``api_key_not_accepted``.
 
     The key may be valid, but the route takes a signed-in dashboard session
-    instead, as every ``api_keys`` route does. Retrying with the same key
+    instead, as every ``/apps`` and ``/webhooks`` route does. Retrying with the same key
     fails again.
     """
 

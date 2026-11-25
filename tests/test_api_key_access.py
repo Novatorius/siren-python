@@ -33,8 +33,6 @@ class TestScopes:
             "LEDGER_TRANSACTIONS_READ": "ledger:transactions:read",
             "LEDGER_OBLIGATIONS_READ": "ledger:obligations:read",
             "LEDGER_PAYOUTS_READ": "ledger:payouts:read",
-            "WEBHOOK_SUBSCRIPTIONS_READ": "webhook-subscriptions:read",
-            "WEBHOOK_SUBSCRIPTIONS_MANAGE": "webhook-subscriptions:manage",
         }
         assert [scope.value for scope in siren.LEDGER_READ_SCOPES] == [
             "ledger:conversions:read",
@@ -48,27 +46,19 @@ class TestScopes:
         with pytest.raises(ValueError):
             siren.event_scope("")
 
-    def test_create_sends_ledger_and_webhook_scopes(self, client, mocked_api):
-        route = mocked_api.post("/api-keys").respond(201, json={"id": 5, "rawKey": "sk_live_x"})
-
-        client.api_keys.create(
-            label="Accounting export",
-            scopes=[
-                *siren.LEDGER_READ_SCOPES,
-                ApiKeyScope.WEBHOOK_SUBSCRIPTIONS_READ,
-                "webhook-subscriptions:manage",
-            ],
+    def test_create_key_sends_the_ledger_scopes(self, client, mocked_api):
+        route = mocked_api.post("/apps/accounting-export/key").respond(
+            201, json={"id": 5, "key": "accounting-export", "rawKey": "sk_live_x"}
         )
 
+        client.apps.create_key("accounting-export", scopes=[*siren.LEDGER_READ_SCOPES])
+
         assert json.loads(route.calls.last.request.content) == {
-            "label": "Accounting export",
             "scopes": [
                 "ledger:conversions:read",
                 "ledger:transactions:read",
                 "ledger:obligations:read",
                 "ledger:payouts:read",
-                "webhook-subscriptions:read",
-                "webhook-subscriptions:manage",
             ],
         }
 
@@ -91,13 +81,11 @@ class TestKeyAccess:
 
         assert "propertyId" not in route.calls.last.request.url.params
 
-    def test_webhook_subscriptions_with_key(self, client, mocked_api):
-        create = mocked_api.post("/webhooks").respond(201, json={"id": 4, "signingSecret": "whsec_x"})
-        mocked_api.get("/webhooks").respond(200, json=[{"id": 4}])
+    def test_webhook_subscriptions_with_a_session(self, client, mocked_api):
+        listed = mocked_api.get("/webhooks").respond(200, json=[{"id": 4}])
 
-        client.webhooks.subscriptions.create(target_url="https://example.com/hook", events=["*"])
-        assert create.calls.last.request.headers["Authorization"] == f"Bearer {API_KEY}"
         assert [sub.id for sub in client.webhooks.subscriptions.list()] == [4]
+        assert listed.calls.last.request.headers["Authorization"] == f"Bearer {API_KEY}"
 
 
 class TestRefusals:
@@ -147,12 +135,12 @@ class TestRefusals:
         assert excinfo.value.property_id == 5
 
     def test_key_on_a_session_route(self, mocked_api):
-        route = mocked_api.get("/api-keys").respond(
+        route = mocked_api.get("/apps/scopes").respond(
             401, json=_coded("This route does not accept API keys.", "api_key_not_accepted")
         )
 
         with pytest.raises(siren.ApiKeyNotAcceptedError) as excinfo:
-            siren.Siren(api_key=API_KEY).api_keys.list()
+            siren.Siren(api_key=API_KEY).apps.scopes()
 
         assert isinstance(excinfo.value, siren.AuthenticationError)
         assert excinfo.value.status_code == 401

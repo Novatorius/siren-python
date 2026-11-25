@@ -114,28 +114,26 @@ class TestRetryPolicy:
         assert route.call_count == 1
         assert no_sleep == []
 
-    def test_no_auto_retry_on_create_subscription(self, mocked_api, no_sleep):
-        route = mocked_api.post("/webhooks").respond(
+    def test_no_auto_retry_on_rotate_key(self, mocked_api, no_sleep):
+        route = mocked_api.post("/apps/acme-payouts/key/rotate").respond(
             500, json={"error": {"message": "boom"}}
         )
         client = siren.Siren(api_key=API_KEY, max_retries=3)
 
         with pytest.raises(siren.ApiError):
-            client.webhooks.subscriptions.create(
-                target_url="https://example.com/hook", events=["*"]
-            )
+            client.apps.rotate_key("acme-payouts")
 
         assert route.call_count == 1
         assert no_sleep == []
 
-    def test_no_auto_retry_on_create_api_key(self, mocked_api, no_sleep):
-        route = mocked_api.post("/api-keys").respond(
+    def test_no_auto_retry_on_create_key(self, mocked_api, no_sleep):
+        route = mocked_api.post("/apps/acme-payouts/key").respond(
             502, json={"error": {"message": "bad gateway"}}
         )
         client = siren.Siren(api_key=API_KEY, max_retries=3)
 
         with pytest.raises(siren.ApiError):
-            client.api_keys.create(label="Production server", scopes=["event:*"])
+            client.apps.create_key("acme-payouts", scopes=["event:*"])
 
         assert route.call_count == 1
         assert no_sleep == []
