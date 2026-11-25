@@ -1,4 +1,4 @@
-"""API keys and reconciliation readers."""
+"""Reconciliation readers and the client's namespaces."""
 
 from __future__ import annotations
 
@@ -7,109 +7,6 @@ import json
 import pytest
 
 import siren
-
-
-class TestApiKeys:
-    def test_create_sends_payload_and_returns_raw_key_once(self, client, mocked_api):
-        route = mocked_api.post("/api-keys").respond(
-            201,
-            json={
-                "id": 3,
-                "keyPrefix": "sk_live_a1b2c3d4",
-                "label": "Production server",
-                "status": "active",
-                "propertyId": None,
-                "scopes": ["event:*"],
-                "expiresAt": None,
-                "lastUsedAt": None,
-                "revokedAt": None,
-                "dateCreated": "2026-10-19T00:00:00+00:00",
-                "dateModified": "2026-10-19T00:00:00+00:00",
-                "rawKey": "sk_live_" + "f" * 64,
-            },
-        )
-
-        key = client.api_keys.create(label="Production server", scopes=["event:*"])
-
-        body = json.loads(route.calls.last.request.content)
-        assert body == {"label": "Production server", "scopes": ["event:*"]}
-        assert key.id == 3
-        assert key.raw_key == "sk_live_" + "f" * 64
-        assert key.key_prefix == "sk_live_a1b2c3d4"
-        # Siren's ApiKeyAdapter names the creation time dateCreated.
-        assert key.created_at == "2026-10-19T00:00:00+00:00"
-        assert key.revoked_at is None
-
-
-    def test_create_without_label_omits_it(self, client, mocked_api):
-        # CreateApiKey reads label as optional and stores an empty one.
-        route = mocked_api.post("/api-keys").respond(
-            201, json={"id": 2, "keyPrefix": "sk_live_bbbb", "label": "", "rawKey": "sk_live_x"}
-        )
-
-        client.api_keys.create(scopes=["event:sale"])
-
-        assert json.loads(route.calls.last.request.content) == {"scopes": ["event:sale"]}
-    def test_create_sends_expiry_and_property(self, client, mocked_api):
-        route = mocked_api.post("/api-keys").respond(201, json={"id": 5})
-
-        client.api_keys.create(
-            label="Store",
-            scopes=["event:sale"],
-            expires_at="2027-01-01T00:00:00Z",
-            property_id=4,
-        )
-
-        assert json.loads(route.calls.last.request.content) == {
-            "label": "Store",
-            "scopes": ["event:sale"],
-            "expiresAt": "2027-01-01T00:00:00Z",
-            "propertyId": 4,
-        }
-
-    @pytest.mark.parametrize("scopes", [None, [], "event:*"])
-    def test_create_requires_scopes(self, client, mocked_api, scopes):
-        # Siren's CreateApiKey answers 400 "At least one scope is required."
-        # when scopes is missing or empty, and has done so since before this
-        # SDK's 0.1.0. The SDK used to promise that omitting scopes gave full
-        # access, which was never true, so it now refuses before sending.
-        route = mocked_api.post("/api-keys").respond(201, json={"id": 4})
-
-        with pytest.raises((ValueError, TypeError)):
-            client.api_keys.create(label="CI", scopes=scopes)
-
-        assert not route.called
-
-    def test_list_returns_bare_array_and_has_no_raw_key(self, client, mocked_api):
-        mocked_api.get("/api-keys").respond(
-            200,
-            json=[
-                {"id": 1, "keyPrefix": "sk_live_aaaa", "label": "One", "status": "active"},
-                {"id": 2, "keyPrefix": "sk_live_bbbb", "label": "Two", "status": "revoked"},
-            ],
-        )
-
-        keys = client.api_keys.list()
-
-        assert [k.id for k in keys] == [1, 2]
-        assert all(k.raw_key is None for k in keys)
-
-    def test_list_pages_with_number_and_offset(self, client, mocked_api):
-        # GET /api-keys serves at most 200 rows a request, and an org can
-        # hold 250 active keys plus its revoked ones.
-        route = mocked_api.get("/api-keys").respond(200, json=[])
-
-        client.api_keys.list(number=200, offset=200)
-
-        params = route.calls.last.request.url.params
-        assert params["number"] == "200"
-        assert params["offset"] == "200"
-
-    def test_revoke(self, client, mocked_api):
-        route = mocked_api.delete("/api-keys/2").respond(200)
-
-        assert client.api_keys.revoke(2) is None
-        assert route.called
 
 
 class TestReconciliationReaders:
@@ -259,12 +156,10 @@ class TestPublicSurface:
         assert hasattr(client.events, "ingest")
         assert hasattr(client.webhooks, "construct_event")
         assert hasattr(client.webhooks, "verify_signature")
-        assert hasattr(client.webhooks.subscriptions, "create")
         assert hasattr(client.webhooks.subscriptions, "list")
         assert hasattr(client.webhooks.subscriptions, "delete")
-        assert hasattr(client.api_keys, "create")
-        assert hasattr(client.api_keys, "list")
-        assert hasattr(client.api_keys, "revoke")
+        for method in ("scopes", "create_key", "rotate_key", "revoke_key"):
+            assert hasattr(client.apps, method)
         for reader in ("conversions", "transactions", "obligations", "payouts"):
             assert hasattr(getattr(client, reader), "list")
 

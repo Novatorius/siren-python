@@ -1,0 +1,42 @@
+{
+    "about": "An app answering the request in signed-request.json. Each exchange is posted in order to the answer route with the app's API key. The answer is the JSON body alone, at most 16 KB, and must be a JSON object. A refusal is matched on status and error code.",
+    "method": "POST",
+    "path": "/siren/v1/apps/requests/apr_b79943ff8ca353ce5cf5312bb3fa66c7/answer",
+    "headers": {
+        "Authorization": "Bearer <the app's API key>",
+        "Content-Type": "application/json"
+    },
+    "exchanges": [
+        {
+            "name": "first answer",
+            "answer": {
+                "outcome": "paid",
+                "reference": "acme-ledger-5521"
+            },
+            "status": 200,
+            "reply": {
+                "status": "accepted"
+            }
+        },
+        {
+            "name": "the same answer again",
+            "answer": {
+                "outcome": "paid",
+                "reference": "acme-ledger-5521"
+            },
+            "status": 200,
+            "reply": {
+                "status": "accepted",
+                "duplicate": true
+            }
+        },
+        {
+            "name": "a different answer",
+            "answer": {
+                "outcome": "failed"
+            },
+            "status": 409,
+            "code": "app_request_already_answered"
+        }
+    ]
+}

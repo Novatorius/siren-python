@@ -231,53 +231,6 @@ class TestConstructEvent:
 
 
 class TestSubscriptions:
-    def test_create_sends_payload_and_returns_signing_secret(self, client, mocked_api):
-        route = mocked_api.post("/webhooks").respond(
-            201,
-            json={
-                "id": 5,
-                "targetUrl": "https://example.com/webhooks/siren",
-                "events": ["conversion.approved", "payout.paid"],
-                "description": "Prod endpoint",
-                "status": "active",
-                "propertyId": None,
-                "dateCreated": "2026-10-19T00:00:00+00:00",
-                "signingSecret": "whsec_only_once",
-            },
-        )
-
-        subscription = client.webhooks.subscriptions.create(
-            target_url="https://example.com/webhooks/siren",
-            events=[
-                siren.WebhookEventType.CONVERSION_APPROVED,
-                siren.WebhookEventType.PAYOUT_PAID,
-            ],
-            description="Prod endpoint",
-        )
-
-        body = json.loads(route.calls.last.request.content)
-        assert body == {
-            "targetUrl": "https://example.com/webhooks/siren",
-            "events": ["conversion.approved", "payout.paid"],
-            "description": "Prod endpoint",
-        }
-        assert subscription.id == 5
-        assert subscription.signing_secret == "whsec_only_once"
-        assert subscription.target_url == "https://example.com/webhooks/siren"
-        # Siren's WebhookSubscriptionAdapter names the creation time dateCreated.
-        assert subscription.created_at == "2026-10-19T00:00:00+00:00"
-
-    def test_create_accepts_wildcard_strings(self, client, mocked_api):
-        route = mocked_api.post("/webhooks").respond(201, json={"id": 6, "events": ["*"]})
-
-        client.webhooks.subscriptions.create(
-            target_url="https://example.com/hook", events=["*"]
-        )
-
-        body = json.loads(route.calls.last.request.content)
-        assert body["events"] == ["*"]
-        assert "description" not in body
-
     def test_list_returns_bare_array(self, client, mocked_api):
         mocked_api.get("/webhooks").respond(
             200,

@@ -61,8 +61,6 @@ tags:
       recordsTruncated}`. Both kinds carry the same headers. An envelope's
       `id` is the `X-Siren-Delivery` value and its `type` is the
       `X-Siren-Event` value, which a plain payload's own fields never match.
-  - name: API Keys
-    description: Manage API keys.
   - name: Reconciliation
     description: Read Siren's ledger to reconcile against your own records.
 paths:
@@ -250,12 +248,9 @@ paths:
       operationId: listWebhookSubscriptions
       summary: List webhook subscriptions
       description: |
-        An API key needs `webhook-subscriptions:read` or
-        `webhook-subscriptions:manage`, and must be organization-wide. A key
-        bound to one store is refused with 403 `store_key_not_allowed`.
+        Takes a signed-in dashboard session. The webhook scopes are
+        retired, so Siren answers an API key with 401 `api_key_not_accepted`.
       security:
-        - apiKey: ['webhook-subscriptions:read']
-        - apiKey: ['webhook-subscriptions:manage']
         - dashboardSession: []
       parameters:
         - { $ref: '#/components/parameters/Number200' }
@@ -272,46 +267,6 @@ paths:
                 items: { $ref: '#/components/schemas/WebhookSubscription' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
-    post:
-      tags: [Webhooks]
-      operationId: createWebhookSubscription
-      summary: Create a webhook subscription
-      description: |
-        Registers a URL to receive event callbacks. The response includes
-        `signingSecret`, returned **once** — store it to verify future
-        deliveries. Deliveries are signed with
-        `X-Siren-Signature: sha256=<hmac-sha256(rawBody, signingSecret)>`.
-        `events` is stored as given and is not checked against the catalog,
-        so a name Siren does not send is accepted and never delivered. An
-        organization holds at most 100 subscriptions.
-
-        An API key needs `webhook-subscriptions:manage`, and must be
-        organization-wide. A key bound to one store is refused with 403
-        `store_key_not_allowed`.
-      security:
-        - apiKey: ['webhook-subscriptions:manage']
-        - dashboardSession: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/WebhookSubscriptionCreate' }
-      responses:
-        '201':
-          description: Subscription created.
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/WebhookSubscription'
-                  - type: object
-                    properties:
-                      signingSecret:
-                        type: string
-                        description: HMAC signing secret. Returned once.
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
   /webhooks/events:
     get:
       tags: [Webhooks]
@@ -321,12 +276,9 @@ paths:
         The catalog the dashboard's event picker is built from. It names
         exactly the event types Siren sends.
 
-        An API key needs `webhook-subscriptions:read` or
-        `webhook-subscriptions:manage`, and must be organization-wide. A key
-        bound to one store is refused with 403 `store_key_not_allowed`.
+        Takes a signed-in dashboard session. The webhook scopes are
+        retired, so Siren answers an API key with 401 `api_key_not_accepted`.
       security:
-        - apiKey: ['webhook-subscriptions:read']
-        - apiKey: ['webhook-subscriptions:manage']
         - dashboardSession: []
       responses:
         '200':
@@ -344,12 +296,9 @@ paths:
       operationId: getWebhookSubscription
       summary: Get a webhook subscription
       description: |
-        An API key needs `webhook-subscriptions:read` or
-        `webhook-subscriptions:manage`, and must be organization-wide. A key
-        bound to one store is refused with 403 `store_key_not_allowed`.
+        Takes a signed-in dashboard session. The webhook scopes are
+        retired, so Siren answers an API key with 401 `api_key_not_accepted`.
       security:
-        - apiKey: ['webhook-subscriptions:read']
-        - apiKey: ['webhook-subscriptions:manage']
         - dashboardSession: []
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
@@ -367,11 +316,9 @@ paths:
       operationId: deleteWebhookSubscription
       summary: Delete a webhook subscription
       description: |
-        An API key needs `webhook-subscriptions:manage`, and must be
-        organization-wide. A key bound to one store is refused with 403
-        `store_key_not_allowed`.
+        Takes a signed-in dashboard session. The webhook scopes are
+        retired, so Siren answers an API key with 401 `api_key_not_accepted`.
       security:
-        - apiKey: ['webhook-subscriptions:manage']
         - dashboardSession: []
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
@@ -400,12 +347,9 @@ paths:
         paused one. Each test makes Siren send a request, so the number of
         tests per hour is limited, and Siren answers 429 past it.
 
-        An API key needs `webhook-subscriptions:manage`, and must be
-        organization-wide. A key that holds only `webhook-subscriptions:read`
-        is refused with 403 `missing_scope`, and a key bound to one store
-        with 403 `store_key_not_allowed`.
+        Takes a signed-in dashboard session. The webhook scopes are
+        retired, so Siren answers an API key with 401 `api_key_not_accepted`.
       security:
-        - apiKey: ['webhook-subscriptions:manage']
         - dashboardSession: []
       parameters:
         - { name: id, in: path, required: true, schema: { type: integer } }
@@ -434,89 +378,6 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
-  /api-keys:
-    get:
-      tags: [API Keys]
-      operationId: listApiKeys
-      summary: List API keys
-      description: |
-        Organization admins only. Revoked keys are listed too.
-
-        Takes a signed-in dashboard session. No API key scope reaches this
-        route, and Siren answers an API key with 401 `api_key_not_accepted`.
-      security:
-        - dashboardSession: []
-      parameters:
-        - { $ref: '#/components/parameters/Number200' }
-        - { $ref: '#/components/parameters/Offset' }
-      responses:
-        '200':
-          description: API keys (bare array, without raw key material). The total is in `x-siren-estimated-count`.
-          headers:
-            x-siren-estimated-count: { $ref: '#/components/headers/EstimatedCount' }
-          content:
-            application/json:
-              schema:
-                type: array
-                items: { $ref: '#/components/schemas/ApiKey' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-    post:
-      tags: [API Keys]
-      operationId: createApiKey
-      summary: Create an API key
-      description: |
-        Creates a new API key. Organization admins only. The plaintext
-        `rawKey` (`sk_live_...`) is returned **once** and cannot be retrieved
-        later. A key holds event scopes (`event:*` or `event:{slug}`, or
-        `*`), the ledger read scopes and the webhook scopes. An older
-        resource scope such as `programs:read` or `conversions:read` is
-        refused with a 400. An organization holds at most 250 active keys.
-
-        Takes a signed-in dashboard session. No API key scope reaches this
-        route, and Siren answers an API key with 401 `api_key_not_accepted`.
-      security:
-        - dashboardSession: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/ApiKeyCreate' }
-      responses:
-        '201':
-          description: API key created.
-          content:
-            application/json:
-              schema:
-                allOf:
-                  - $ref: '#/components/schemas/ApiKey'
-                  - type: object
-                    properties:
-                      rawKey:
-                        type: string
-                        description: Plaintext key. Returned once.
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-  /api-keys/{id}:
-    delete:
-      tags: [API Keys]
-      operationId: revokeApiKey
-      summary: Revoke an API key
-      description: |
-        Takes a signed-in dashboard session. No API key scope reaches this
-        route, and Siren answers an API key with 401 `api_key_not_accepted`.
-      security:
-        - dashboardSession: []
-      parameters:
-        - { name: id, in: path, required: true, schema: { type: integer } }
-      responses:
-        '200':
-          description: Revoked. The body is the revoked key.
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/ApiKey' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '404': { $ref: '#/components/responses/NotFound' }
   /conversions:
     get:
       tags: [Reconciliation]
@@ -613,10 +474,9 @@ components:
       scheme: bearer
       bearerFormat: sk_live_...
       description: |
-        An API key minted in the Siren dashboard or via createApiKey. Event
-        scopes send events. The ledger scopes read conversions, transactions,
-        obligations and payouts, and the webhook scopes read and manage
-        webhook subscriptions. Each operation lists the scopes that open it,
+        An app's key, made with `siren apps apply` or
+        `POST /apps/{key}/key`. Event scopes send events. The ledger scopes
+        read conversions, transactions, obligations and payouts. Each operation lists the scopes that open it,
         and holding any one listed requirement is enough. Every other route
         answers an API key with 401 `api_key_not_accepted`, the API key
         routes included. A key's requests count against the organization's
@@ -801,16 +661,6 @@ components:
         event: { $ref: '#/components/schemas/WebhookEventType' }
         category: { type: string, example: Conversions }
         label: { type: string, example: A conversion was approved }
-    WebhookSubscriptionCreate:
-      type: object
-      required: [targetUrl, events]
-      properties:
-        targetUrl: { type: string, format: uri, example: https://example.com/webhooks/siren }
-        events:
-          type: array
-          items: { $ref: '#/components/schemas/WebhookEventType' }
-          example: ['conversion.approved', 'payout.paid']
-        description: { type: string, maxLength: 255 }
     WebhookEventType:
       type: string
       description: A subscribable event type. Use `*` to subscribe to all.
@@ -850,57 +700,6 @@ components:
         - sale.created
         - transaction.completed
         - transaction.created
-    ApiKey:
-      type: object
-      properties:
-        id: { type: integer }
-        keyPrefix: { type: string, example: sk_live_a1b2c3d4 }
-        label: { type: string }
-        status: { type: string, example: active }
-        propertyId: { type: integer, nullable: true }
-        scopes:
-          type: array
-          items: { type: string }
-        expiresAt: { type: string, format: date-time, nullable: true }
-        lastUsedAt: { type: string, format: date-time, nullable: true }
-        revokedAt: { type: string, format: date-time, nullable: true }
-        dateCreated: { type: string, format: date-time, nullable: true }
-        dateModified: { type: string, format: date-time, nullable: true }
-    ApiKeyCreate:
-      type: object
-      required: [scopes]
-      properties:
-        label: { type: string, example: Production server }
-        scopes:
-          type: array
-          minItems: 1
-          items: { type: string }
-          example: ['event:*', 'ledger:conversions:read']
-          description: |
-            Required. Event scopes: `event:*` for every event, or
-            `event:{slug}` for one event type. `*` is also accepted and grants
-            what `event:*` grants.
-
-            Ledger and webhook scopes: `ledger:conversions:read`,
-            `ledger:transactions:read`, `ledger:obligations:read`,
-            `ledger:payouts:read`, `webhook-subscriptions:read` and
-            `webhook-subscriptions:manage`. Each is granted only by its exact
-            name. `*`, `event:*` and wildcards such as `ledger:*` grant none
-            of them.
-
-            An older resource scope such as `programs:read` or
-            `conversions:read` is refused with 400.
-        expiresAt:
-          type: string
-          format: date-time
-          description: When the key stops working. Must be in the future.
-        propertyId:
-          type: integer
-          description: |
-            Binds the key to this Property of the organization. Siren stamps
-            it on the key's events, the key reads only that store's
-            conversions, transactions and obligations, and it is refused on
-            payouts and webhook subscriptions with 403 `store_key_not_allowed`.
     Error:
       type: object
       description: |

@@ -34,6 +34,23 @@ class ErrorCode:
     #: :class:`StoreKeyNotAllowedError`.
     STORE_KEY_NOT_ALLOWED = "store_key_not_allowed"
 
+    #: 401: Siren takes no answer to an app's request from this key. An app
+    #: answers with its own key. The SDK also gives this code to the uncoded
+    #: 401 Siren's key check sends on the answer route.
+    #: :class:`AuthenticationError`.
+    APP_ANSWER_UNAUTHORIZED = "app_answer_unauthorized"
+
+    #: 422: Siren refused an answer that doesn't fit its request, with one
+    #: sentence that says why. The request handler's ``simulate()`` gives
+    #: the same code and words for an answer Siren would refuse.
+    #: :class:`ValidationError`.
+    APP_ANSWER_INVALID = "app_answer_invalid"
+
+    #: 409: an app with features needs a key and an address, and the app
+    #: would lack one. ``error.data["missing"]`` names what it lacks. Siren
+    #: sends it to ``apps.features.create()``. :class:`ConflictError`.
+    APP_FEATURES_NEED_KEY_AND_ADDRESS = "app_features_need_key_and_address"
+
 
 class SirenError(Exception):
     """Base class for every error raised by the Siren SDK."""
@@ -107,7 +124,7 @@ class ApiKeyNotAcceptedError(AuthenticationError):
     """401 with ``code`` ``api_key_not_accepted``.
 
     The key may be valid, but the route takes a signed-in dashboard session
-    instead, as every ``api_keys`` route does. Retrying with the same key
+    instead, as every ``/apps`` and ``/webhooks`` route does. Retrying with the same key
     fails again.
     """
 
@@ -209,7 +226,28 @@ class ConnectionError(SirenError):  # noqa: A001 - name mandated by the SDK cont
 
 
 class SignatureVerificationError(SirenError):
-    """Webhook signature verification failed (no HTTP status)."""
+    """A webhook's or an app request's signature failed its check (no HTTP
+    status). For an app request ``code`` says which check:
+    ``signature_missing``, ``signature_malformed``, ``timestamp_mismatch``,
+    ``signature_mismatch`` or ``timestamp_out_of_tolerance``. The request
+    handler hands it to ``on_error`` and still replies 401."""
+
+
+class AppHandlerError(SirenError):
+    """A mistake in the app's own code that the request handler found, so
+    one ``except`` covers them all: a kind Siren never sends, an empty key,
+    a second function for one kind and key, an option it can't use, an ask's
+    function that returned nothing or an answer it can't post, and a bad
+    argument to ``simulate()``. The Node and PHP SDKs raise their own
+    ``AppHandlerError`` for the same mistakes. It carries no HTTP status."""
+
+
+class AppSlowTellError(SirenError):
+    """A tell or an ``on_event`` function that took longer than Siren waits
+    for its reply (``TELL_TIME_LIMIT_SECONDS``, 8). The handler still
+    replied 200, but Siren had stopped waiting, counted a timeout and sends
+    it again, so the function ran twice. ``on_error`` gets it, and ``simulate()``
+    returns it. The Node and PHP SDKs report the same case."""
 
 
 _STATUS_TO_ERROR = {
@@ -253,7 +291,13 @@ def error_from_response(response: Any) -> SirenError:
     data: Optional[Any] = None
 
     error = body.get("error") if isinstance(body, dict) else None
-    if isinstance(error, str):
+    description = body.get("error_description") if isinstance(body, dict) else None
+    if isinstance(error, str) and error and isinstance(description, str):
+        # The token route uses the OAuth envelope (RFC 6749, section 5.2):
+        # ``error`` is the code and ``error_description`` the message.
+        message = description or error
+        code = error
+    elif isinstance(error, str):
         message = error or fallback
     elif isinstance(error, dict):
         message = error.get("message") or fallback

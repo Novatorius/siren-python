@@ -1,0 +1,20 @@
+{
+    "about": "An app request as Siren sends it, made by WebhookSignature::headers() and AppRequestEnvelope::build() on fixed inputs. A receiver checks X-Siren-Signature-V2 over \"<timestamp>.<body>\" with the secret. Siren may deliver one request more than once, so a receiver drops a repeat by the body's `id`. Idempotency-Key only repeats that id and is not signed. tests/Integration/Tests/AppsExchangeFlowTest.php checks the PHP side still makes these bytes.",
+    "secret": "abababababababababababababababababababababababababababababababab",
+    "timestamp": 1794913200,
+    "eventType": "app.request",
+    "eventId": "apr_b79943ff8ca353ce5cf5312bb3fa66c7.1",
+    "idempotencyKey": "apr_b79943ff8ca353ce5cf5312bb3fa66c7",
+    "url": "https://acme.example/siren/acme-payouts",
+    "body": "{\"version\":1,\"id\":\"apr_b79943ff8ca353ce5cf5312bb3fa66c7\",\"type\":\"app.request\",\"mode\":\"ask\",\"app\":\"acme-payouts\",\"feature\":{\"kind\":\"payoutMethod\",\"key\":\"acme-ledger\",\"id\":\"app:12\"},\"createdAt\":\"2026-11-17T09:14:03+00:00\",\"answerBy\":\"2026-11-18T09:14:03+00:00\",\"answerUrl\":\"https:\\/\\/api.siren.test\\/siren\\/v1\\/apps\\/requests\\/apr_b79943ff8ca353ce5cf5312bb3fa66c7\\/answer\",\"data\":{\"payoutId\":88,\"amount\":2500,\"currency\":\"USD\"}}",
+    "headers": {
+        "Content-Type": "application/json",
+        "X-Siren-Signature": "sha256=bca68dfcc64637005893e4a12009dcdceb80688f9e6d2aa1a140a632cb21daab",
+        "X-Siren-Event": "app.request",
+        "X-Siren-Delivery": "apr_b79943ff8ca353ce5cf5312bb3fa66c7.1",
+        "User-Agent": "Siren-Webhooks/1.0",
+        "X-Siren-Timestamp": "1794913200",
+        "X-Siren-Signature-V2": "t=1794913200,v1=0ddaa013da8e4c6e4708d400fb63ce139de42d05fee9c4e3261799da61315a25",
+        "Idempotency-Key": "apr_b79943ff8ca353ce5cf5312bb3fa66c7"
+    }
+}

@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Mapping, Optional, Sequence, Union
 
 from ._client import HttpClient, parse_json
-from .types import EventResult
+from ._tokens import AppTokens
+from .errors import SirenError
+from .types import BrowserToken, EventResult
+
+if TYPE_CHECKING:  # pragma: no cover
+    from .browser_tokens import BrowserTokenHandler
 
 Number = Union[int, float]
 
@@ -34,10 +39,16 @@ def _normalize_line_item(item: Mapping[str, Any]) -> Dict[str, Any]:
 
 
 class Events:
-    """``siren.events`` — record sales, refunds, referred visits, and custom events."""
+    """``siren.events`` — record sales, refunds, referred visits, and custom events.
 
-    def __init__(self, client: HttpClient) -> None:
+    A custom event takes only a short-lived app token, which :meth:`ingest`
+    gets from the app's key and keeps fresh on its own. For a page that sends
+    a custom event from the browser, see :meth:`browser_token_handler`.
+    """
+
+    def __init__(self, client: HttpClient, tokens: Optional[AppTokens] = None) -> None:
         self._client = client
+        self._tokens = tokens if tokens is not None else AppTokens(client)
 
     def sale(
         self,
@@ -106,15 +117,64 @@ class Events:
         return self._post("site-visited", payload)
 
     def ingest(self, slug: str, payload: Mapping[str, Any]) -> EventResult:
-        """Record a custom event type registered on the org (``POST /event/{slug}``).
+        """Send a custom event of the app (``POST /event/{slug}``).
 
         ``payload`` is passed through as the JSON body unchanged.
-        """
-        return self._post(slug, dict(payload))
 
-    def _post(self, slug: str, payload: Dict[str, Any]) -> EventResult:
+        The send carries a short-lived app token, not the key. The client
+        gets one from the key the first time, keeps it, and gets a new one
+        when fewer than two minutes of its life are left. Threads that need
+        one at the same time share one request. A send Siren answers with 401
+        drops the token and goes again once with a new one. A key that
+        belongs to no app sends with the key.
+        """
+        token = self._tokens.server_token()
+        if token is None:
+            return self._post(slug, dict(payload))
+        try:
+            return self._post(slug, dict(payload), token)
+        except SirenError as exc:
+            if exc.status_code != 401:
+                raise
+            self._tokens.drop_server_token(token)
+            fresh = self._tokens.server_token()
+            if fresh is None:
+                raise
+            return self._post(slug, dict(payload), fresh)
+
+    def browser_token(self, event_key: str) -> BrowserToken:
+        """A browser token for one custom event of the app.
+
+        Call it on the app's server, never in the page. The token lasts ten
+        minutes and works only for this event, from a domain the event
+        allows. The client reuses it until fewer than 60 seconds are left,
+        so a busy page costs one grant every nine minutes or so.
+
+        Raises :class:`siren.BadRequestError` with ``code`` ``invalid_scope``
+        when the app has no such event or the event allows no domain.
+        """
+        if not event_key:
+            raise ValueError("events.browser_token() requires a non-empty event key")
+        return self._tokens.browser_token(event_key)
+
+    def browser_token_handler(
+        self, *, events: Optional[Sequence[str]] = None
+    ) -> "BrowserTokenHandler":
+        """The browser token address for the app's server, mounted in one line.
+
+        It reads the event key from a JSON body ``{"event": "..."}`` or the
+        query ``?event=``. ``events``, when given, is the only event keys a
+        page may ask for. Call the handler with ``(body, query)`` for
+        ``(status, json)``, or mount ``handler.wsgi`` or ``handler.asgi``.
+        See :class:`siren.BrowserTokenHandler`.
+        """
+        from .browser_tokens import BrowserTokenHandler
+
+        return BrowserTokenHandler(self, events=events)
+
+    def _post(self, slug: str, payload: Dict[str, Any], token: Optional[str] = None) -> EventResult:
         response = self._client.request(
-            "POST", f"/event/{slug}", json=payload, retryable=True
+            "POST", f"/event/{slug}", json=payload, retryable=True, bearer=token
         )
         header = response.headers.get("X-Siren-OID")
         opportunity_id: Optional[int] = None

@@ -1,0 +1,81 @@
+{
+  "id": "apr_9f2c4e0b7a1d4c3e8b6f5a2d1c0e9b8a",
+  "appId": 3,
+  "feature": "app:12",
+  "kind": "distributionResolver",
+  "mode": "ask",
+  "test": false,
+  "subject": {
+    "type": "distribution",
+    "id": "21"
+  },
+  "status": "needs_attention",
+  "sendCount": 3,
+  "answerBy": "2026-11-20T16:58:00+00:00",
+  "applyLease": null,
+  "answeredBy": null,
+  "answeredAt": null,
+  "lastError": "HTTP 500",
+  "dropsAt": "2026-11-27T15:58:00+00:00",
+  "createdAt": "2026-11-20T15:58:00+00:00",
+  "data": {
+    "distribution": {
+      "id": 21,
+      "distributorId": 2,
+      "periodStart": "2026-10-01T00:00:00+00:00",
+      "periodEnd": "2026-11-01T00:00:00+00:00"
+    },
+    "distributor": {
+      "id": 2,
+      "name": "Partner pool"
+    },
+    "pool": {
+      "value": 10000,
+      "total": 10000,
+      "paid": 0,
+      "units": "USD",
+      "currency": {
+        "id": "USD",
+        "symbol": "$",
+        "position": "before",
+        "name": "US Dollar",
+        "scale": 2,
+        "decimalPlaces": 2,
+        "type": "monetary"
+      }
+    },
+    "metrics": [
+      {
+        "metricId": 41,
+        "collaboratorId": 42,
+        "score": 30,
+        "triggerCount": 3
+      },
+      {
+        "metricId": 43,
+        "collaboratorId": 57,
+        "score": 20,
+        "triggerCount": 2
+      }
+    ]
+  },
+  "answer": null,
+  "answeredByUser": null,
+  "appKey": "acme-payouts",
+  "featureKey": "split-by-score",
+  "sends": [
+    {
+      "id": 901,
+      "webhookSubscriptionId": 44,
+      "eventType": "app.request",
+      "eventId": "apr_9f2c4e0b7a1d4c3e8b6f5a2d1c0e9b8a.1",
+      "payload": {},
+      "status": "failed",
+      "attemptCount": 1,
+      "httpStatusCode": 500,
+      "responseBody": "boom",
+      "errorMessage": "HTTP 500",
+      "nextRetryAt": null
+    }
+  ]
+}

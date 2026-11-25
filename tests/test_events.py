@@ -162,6 +162,11 @@ class TestSiteVisited:
 
 class TestIngest:
     def test_posts_payload_through_to_custom_slug(self, client, mocked_api):
+        # A custom event trades the key for an app token first (slice C13),
+        # see test_app_tokens.py.
+        mocked_api.post("/oauth/token").respond(
+            200, json={"access_token": "srv.token", "token_type": "Bearer", "expires_in": 1200}
+        )
         route = mocked_api.post("/event/loyalty-points-earned").respond(
             200, headers={"X-Siren-OID": "31"}
         )
