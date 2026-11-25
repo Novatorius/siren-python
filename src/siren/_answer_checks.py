@@ -81,6 +81,13 @@ def _text(value: Any) -> str:
     return str(value)
 
 
+def _as_dict(value: Any) -> Any:
+    """Writes a mapping that is not a dict, such as a read-only one, as JSON."""
+    if isinstance(value, Mapping):
+        return dict(value)
+    raise TypeError(f"{type(value).__name__} is not JSON")
+
+
 def _encoded(value: Any) -> str:
     """PHP's ``json_encode()`` with no flags: ASCII only, and ``/`` escaped."""
     return json.dumps(value, separators=(",", ":"), ensure_ascii=True).replace("/", "\\/")
@@ -458,7 +465,7 @@ def siren_refusal(kind: str, question: Mapping[str, Any], answer: Mapping[str, A
     limit before the kind's own check. A kind this SDK has no check for, such
     as one taken through ``extra_kinds``, passes here.
     """
-    decoded = json.loads(json.dumps(answer))
+    decoded = json.loads(json.dumps(answer, default=_as_dict))
     if len(_encoded(decoded).encode("utf-8")) > MAX_ANSWER_BYTES:
         return f"The answer is larger than {MAX_ANSWER_BYTES} bytes of JSON."
     check = _CHECKS.get(kind)

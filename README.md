@@ -134,10 +134,10 @@ from siren import AppAnswerLater, AppAsk, DistributionResolverAnswer, Distributi
 
 @answers.on("distributionResolver", "split-by-score")
 def split(request: AppAsk[DistributionResolverQuestion]) -> Union[DistributionResolverAnswer, AppAnswerLater]:
-    pool = request.data["pool"]  # request.data["pools"] fails the check
-    if not pool["metrics"]:
-        return answers.later()
-    shares = {str(m["collaboratorId"]): m["score"] for m in pool["metrics"]}
+    pool, metrics = request.data["pool"], request.data["metrics"]  # request.data["pools"] fails the check
+    if not metrics:
+        return answers.later()  # nothing to share yet, answer later with apps.requests.answer()
+    shares = client.apps.split_pool(pool, {m["metricId"]: m["score"] for m in metrics})
     return {"outcome": "allocated", "units": pool["units"], "shares": shares}
 ```
 
@@ -786,7 +786,7 @@ group's order, with its active engagements on the opportunity, oldest first.
 def pick_the_program(request):
     # Try the program whose best engagement scores highest first.
     best = {p["id"]: max([0] + [e["score"] for e in p["engagements"]]) for p in request.data["programs"]}
-    return {"outcome": "sorted", "programIds": sorted(best, key=best.get, reverse=True)}
+    return {"outcome": "sorted", "programIds": sorted(best, key=lambda program: best[program], reverse=True)}
 ```
 
 It answers `siren.ProgramGroupSorterAnswer`, every program id of the question
@@ -953,12 +953,14 @@ Then mount it in one line. It needs no framework, and `tokens.wsgi` and
 
 FastAPI or Starlette:
 
+<!-- readme-test: token-asgi -->
 ```python
 app.add_route("/siren/token", tokens.asgi, methods=["GET", "POST"])
 ```
 
 Flask, through Werkzeug, which Flask ships with:
 
+<!-- readme-test: token-flask -->
 ```python
 from werkzeug.middleware.dispatcher import DispatcherMiddleware
 
@@ -969,6 +971,7 @@ Django, as a view, with `path("siren/token", siren_token)` in `urls.py`.
 Calling the handler with the body and query gives the status and JSON, which
 is also the way into any other framework:
 
+<!-- readme-test: token-django -->
 ```python
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -1170,6 +1173,7 @@ From `apps.requests.answer()` these raise. From the handler they go to
 
 ### Record a sale
 
+<!-- readme-test: record-sale -->
 ```python
 import siren
 
@@ -1194,6 +1198,7 @@ event and answers `202`, and `result.queued` is `True`.
 With line items (reward pools compute `amount x quantity` per line; a missing
 `quantity` defaults to `1`):
 
+<!-- readme-test: sale-items -->
 ```python
 client.events.sale(
     source="stripe",
@@ -1210,6 +1215,7 @@ client.events.sale(
 
 Refunds and referred visits:
 
+<!-- readme-test: refund-visit -->
 ```python
 client.events.refund(source="stripe", external_id="cs_test_a1b2c3")
 client.events.site_visited(collaborator_id=88, user_id=12345)
@@ -1234,6 +1240,7 @@ event type arrives in the `X-Siren-Event` header and the event id in
 does not name the event. The event id stays the same when Siren retries a
 delivery, so use it to drop repeats.
 
+<!-- readme-test: webhook-flask -->
 ```python
 import siren
 from flask import Flask, request
@@ -1269,6 +1276,7 @@ def handle_webhook():
 
 To just check a signature without parsing:
 
+<!-- readme-test: verify-signature -->
 ```python
 if client.webhooks.verify_signature(raw_body, signature_header, secret):
     ...
@@ -1279,6 +1287,7 @@ if client.webhooks.verify_signature(raw_body, signature_header, secret):
 The API key needs the `webhook-subscriptions:manage` scope. A key with
 `webhook-subscriptions:read` can call `list()` only.
 
+<!-- readme-test: subscriptions -->
 ```python
 subscription = client.webhooks.subscriptions.create(
     target_url="https://example.com/webhooks/siren",
@@ -1359,12 +1368,14 @@ on payouts and webhook subscriptions with `StoreKeyNotAllowedError`. An
 organization-wide key reads the whole organization, and narrows a ledger read
 to one store with `property_id`:
 
+<!-- readme-test: store-scope -->
 ```python
 client.conversions.list(property_id=5, status="approved")
 ```
 
 ### API keys
 
+<!-- readme-test: api-keys -->
 ```python
 from siren import ApiKeyScope
 
@@ -1407,6 +1418,7 @@ or an address, since it asks the app at its address.
 Thin paginated readers over Siren's ledger. `page` and `per_page` become
 Siren's `number` and `offset`, and a page holds at most 200 records:
 
+<!-- readme-test: reconciliation -->
 ```python
 page = client.conversions.list(page=1, per_page=50)
 for conversion in page:
@@ -1438,6 +1450,7 @@ All errors subclass `siren.SirenError` and carry `message`, `code`, and
 Webhook verification failures raise `SignatureVerificationError`.
 `siren.ErrorCode` holds the codes the SDK raises a dedicated error for.
 
+<!-- readme-test: errors -->
 ```python
 try:
     client.events.refund(source="stripe", external_id="unknown")
@@ -1449,6 +1462,7 @@ except siren.RateLimitError as err:
 
 ### Configuration
 
+<!-- readme-test: configuration -->
 ```python
 client = siren.Siren(
     api_key="sk_live_...",  # SIREN_API_KEY when left out

@@ -189,6 +189,17 @@ def _check_signature(body_bytes: bytes, headers: Mapping[str, HeaderValue], secr
     return signed_at
 
 
+def _plain(value: Any) -> Any:
+    """``value`` with every mapping made a dict and every tuple a list, so
+    any mapping the answer types accept, such as a read-only one, writes as
+    JSON."""
+    if isinstance(value, Mapping):
+        return {key: _plain(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_plain(item) for item in value]
+    return value
+
+
 def _checked_answer(method: str, request_id: Any, answer: Any) -> Dict[str, Any]:
     """The answer as :meth:`AppRequests.answer` sends it, or :class:`ValueError`
     for one Siren would refuse or that can't be written."""
@@ -200,7 +211,7 @@ def _checked_answer(method: str, request_id: Any, answer: Any) -> Dict[str, Any]
         raise ValueError(
             f"{method} takes the answer as a mapping, such as {{'outcome': 'paid', 'reference': 'TX-1'}}."
         )
-    copy: Dict[str, Any] = dict(answer)
+    copy: Dict[str, Any] = _plain(answer)
     outcome = copy.get("outcome")
     if not isinstance(outcome, str) or outcome == "":
         raise ValueError(f"{method} needs a text outcome in the answer, such as 'paid' or 'resolved'.")

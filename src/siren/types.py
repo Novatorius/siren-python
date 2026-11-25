@@ -6,7 +6,7 @@ import json
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, Generic, Iterator, List, Literal, Optional, Tuple, TypedDict, TypeVar, Union
+from typing import Any, Dict, Generic, Iterator, List, Literal, Mapping, Optional, Tuple, TypedDict, TypeVar, Union
 
 
 class WebhookEventType(str, Enum):
@@ -679,7 +679,7 @@ class DistributionResolverAnswer(TypedDict):
 
     outcome: Literal["allocated"]
     units: str
-    shares: Dict[str, int]
+    shares: Mapping[str, int]
 
 
 # incentiveResolver, Siren's AppRewardQuestion::build().
@@ -737,7 +737,7 @@ class IncentiveResolverAnswer(TypedDict):
 
     outcome: Literal["rewards"]
     units: str
-    rewards: Dict[str, Optional[int]]
+    rewards: Mapping[str, Optional[int]]
 
 
 # incentiveType, Siren's AppIncentiveTypeQuestion::build().
@@ -1225,7 +1225,7 @@ class CollaboratorGroupStructureTreeAnswer(TypedDict):
 
     outcome: Literal["structure"]
     shape: Literal["tree"]
-    parents: Dict[str, Optional[int]]
+    parents: Mapping[str, Optional[int]]
 
 
 CollaboratorGroupStructureAnswer = Union[CollaboratorGroupStructureChainAnswer, CollaboratorGroupStructureTreeAnswer]

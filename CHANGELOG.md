@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `CollaboratorGroupStructureChainAnswer`, `AppPayoutPaid` is
   `PayoutMethodPaidAnswer`, and so on for every kind. Node and PHP use the
   same names.
+- An answer's `shares`, `rewards` and `parents` are typed `Mapping`, not
+  `Dict`, so the `Dict[str, int]` that `apps.split_pool()` returns fits
+  `IncentiveResolverAnswer.rewards` under `mypy --strict`. The SDK writes any
+  mapping in an answer as JSON, a read-only one included.
 - `AppRequest` is generic. The handler and `apps.verify_request()` return an
   `AppAsk[Q]` or an `AppTell[D]`, and `on()` has a generated overload for
   each kind, so mypy checks a decorated function's `request.data` and its
