@@ -284,6 +284,36 @@ def run_token_django(api: respx.MockRouter) -> None:
     assert json.loads(response.content) == {"token": "brw.fake", "event": "signup-completed"}
 
 
+def run_on_event_test(api: respx.MockRouter) -> None:
+    scope: Dict[str, Any] = {}
+    _run("on-event-test", scope)
+    assert scope["approved"] == [testing.sample_event_data("conversion.approved")["conversionId"]]
+
+
+STORED = "apr_9f2c4e0b7a1d4c3e8b6f5a2d1c0e9b8a"
+
+
+def run_replay(api: respx.MockRouter) -> None:
+    row = dict(ROW, id=STORED, data=KINDS["distributionResolver"]["request"]["data"], answer=None, answeredByUser=None)
+    read = api.get(f"/apps/requests/{STORED}").respond(200, json=row)
+    scope = _handler_scope()
+    _run("typed", scope)
+    printed = _run("replay", scope)
+    assert read.called
+    assert printed.strip() == f"{KINDS['distributionResolver']['answer']} None"
+
+
+def run_debug_lines(api: respx.MockRouter) -> None:
+    import logging
+
+    before = logging.getLogger("siren").level
+    try:
+        _run("debug-lines", {})
+        assert logging.getLogger("siren").isEnabledFor(logging.DEBUG)
+    finally:
+        logging.getLogger("siren").setLevel(before)
+
+
 RUN: Dict[str, Callable[..., None]] = {
     "typed": run_typed,
     "requests": run_requests,
@@ -301,6 +331,9 @@ RUN: Dict[str, Callable[..., None]] = {
     "token-asgi": run_token_asgi,
     "token-flask": run_token_flask,
     "token-django": run_token_django,
+    "on-event-test": run_on_event_test,
+    "replay": run_replay,
+    "debug-lines": run_debug_lines,
 }
 
 

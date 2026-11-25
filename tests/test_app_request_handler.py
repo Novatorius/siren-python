@@ -182,7 +182,11 @@ class TestRow3SignatureChecks:
 
         assert reply.status == 401
         assert set(reply.body) == {"error"}
-        assert reply.after is None and called == [] and errors.seen == []
+        assert reply.after is None and called == []
+        # DX pass 4: on_error hears of the refusal too, with no request.
+        [(error, request)] = errors.seen
+        assert isinstance(error, siren.SignatureVerificationError) and request is None
+        assert reply.body == {"error": error.message}
         assert_json_reply(reply)
 
     def test_tolerance_seconds_widens_the_window(self, app_client, errors):

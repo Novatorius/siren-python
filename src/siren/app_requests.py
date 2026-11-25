@@ -74,7 +74,7 @@ from typing import (
 
 from .apps import REQUEST_EVENT, Apps, _BodyRefused, _check_signature, _check_tolerance, _checked_answer, _header
 from ._answer_checks import siren_refusal
-from .errors import AppHandlerError, ConflictError, ErrorCode, SignatureVerificationError, SirenError, ValidationError
+from .errors import AppHandlerError, AppSlowTellError, ConflictError, ErrorCode, SignatureVerificationError, SirenError, ValidationError
 from .types import (
     APP_KINDS,
     APP_REQUEST_KINDS,
@@ -113,13 +113,43 @@ from .webhooks import _is_envelope as _is_webhook_envelope
 if TYPE_CHECKING:  # pragma: no cover
     from .apps import AppRequests
 
-__all__ = ["AppAnswerLater", "AppAskResult", "AppRequestHandler", "AppRequestReply", "AppSimulation", "MAX_BODY_BYTES"]
+__all__ = [
+    "AppAnswerLater",
+    "AppAskResult",
+    "AppRequestHandler",
+    "AppRequestReply",
+    "AppSimulation",
+    "MAX_BODY_BYTES",
+    "TELL_TIME_LIMIT_SECONDS",
+]
 
 #: The longest body the handler reads, 1 MiB, as in the Node SDK. Siren's
 #: requests are far smaller, since an answer alone stays under 16 KB.
 MAX_BODY_BYTES = 1024 * 1024
 
+#: How long Siren waits for a tell's reply, in seconds. Siren's
+#: WebhookDeliveryService::deliver() sends through GuardedCurlHttpClient
+#: with an 8-second timeout, and counts a slower reply as a failed send, so
+#: it sends the tell again. A tell whose function runs longer reaches
+#: ``on_error`` as :class:`~siren.AppSlowTellError`.
+TELL_TIME_LIMIT_SECONDS = 8
+
+#: The handler's default logger. ``request_handler(logger=...)`` replaces it.
 logger = logging.getLogger("siren")
+
+#: Refused signatures the default ``on_error`` writes a line for in one
+#: minute. It counts the rest and writes the count once the minute is over.
+SIGNATURE_LINES_PER_MINUTE = 5
+
+#: What each refused signature's line adds, by the error's code.
+_SIGNATURE_HINTS: Dict[str, str] = {
+    "signature_mismatch": "Check SIREN_SIGNING_SECRET: it must be this app's signing secret, and it changes when the secret is rotated.",
+    "signature_missing": "Check that a proxy passes Siren's X-Siren-* headers through.",
+    "signature_malformed": "Check that a proxy passes Siren's X-Siren-* headers through.",
+    "timestamp_mismatch": "Check that a proxy passes Siren's X-Siren-* headers through.",
+}
+
+_LOGGER_LEVELS = ("debug", "info", "warning", "error")
 
 #: The words a 500 carries when a body parser already ate the body.
 BODY_ALREADY_PARSED = (
@@ -320,6 +350,12 @@ def _next_send(error: BaseException, request: AppRequest, mode: str) -> str:
         return "Siren sends it again in about a minute."
     if isinstance(error, ConflictError):
         return ""  # Answered or dropped: Siren sends it no more.
+    if isinstance(error, ValidationError) and error.code == ErrorCode.APP_ANSWER_INVALID:
+        # Siren sends it again, and the same answer would break the rule again.
+        return (
+            "Your function's answer broke Siren's rule. Reproduce it with simulate() on this request's data, "
+            f"fix it, then resend with `siren apps resend {request.id}`."
+        )
     closes = _window_close(request.answer_by)
     when = f"after {closes}, when" if closes is not None else "when"
     return (
@@ -408,6 +444,7 @@ class AppRequestHandler:
         run_later: Optional[Callable[[Work], Any]] = None,
         on_error: Optional[Callable[..., Any]] = None,
         extra_kinds: Optional[Iterable[str]] = None,
+        logger: Optional[Any] = None,
     ) -> None:
         method = "apps.request_handler()"
         if not isinstance(signing_secret, str) or signing_secret == "":
@@ -416,6 +453,17 @@ class AppRequestHandler:
             raise AppHandlerError(f"{method} takes run_later as a function that is handed the work, such as a queue's add.")
         if on_error is not None and not callable(on_error):
             raise AppHandlerError(f"{method} takes on_error as a function of (error, request).")
+        if logger is not None and (isinstance(logger, str) or not all(callable(getattr(logger, level, None)) for level in _LOGGER_LEVELS)):
+            raise AppHandlerError(
+                f"{method} takes logger as a logging.Logger, or anything with debug, info, warning and error, "
+                "such as a LoggerAdapter."
+            )
+        self._logger: Any = logging.getLogger("siren") if logger is None else logger
+        # The refused signatures of the current minute, for the default's flood control.
+        self._refusals_lock = threading.Lock()
+        self._refusals_since: Optional[float] = None
+        self._refusals_written = 0
+        self._refusals_counted = 0
         self._requests = requests
         self._secret = signing_secret
         try:
@@ -689,16 +737,19 @@ class AppRequestHandler:
                 "answers.simulate() takes a request from siren.testing.app_request(), "
                 "or anything with method, headers and raw_body."
             )
-        checked = self._check(getattr(request, "method", "POST"), request.raw_body, request.headers)
+        checked = self._check(getattr(request, "method", "POST"), request.raw_body, request.headers, report=False)
         if isinstance(checked, AppRequestReply):
             return AppSimulation(checked.status, checked.body)
+        started = _clock()
         try:
             returned = _call(checked.fn, checked.subject)
         except Exception as error:
             if checked.mode == "ask":
                 return AppSimulation(200, {}, None, error)
             return AppSimulation(500, {"error": checked.failed}, None, error)
-        if checked.mode != "ask" or returned is _LATER:
+        if checked.mode != "ask":
+            return AppSimulation(200, {}, None, _slow(checked, _clock() - started))
+        if returned is _LATER:
             return AppSimulation(200, {})
         asked = checked.subject
         assert isinstance(asked, AppRequest)
@@ -729,19 +780,54 @@ class AppRequestHandler:
     # The core --------------------------------------------------------------
 
     def _handle(self, method: Any, raw_body: Any, headers: Any) -> AppRequestReply:
-        checked = self._check(method, raw_body, headers)
+        started = _clock()
+        seen: List[Subject] = []
+        reply = self._serve(method, raw_body, headers, seen)
+        self._debug(seen, reply.status, started)
+        return reply
+
+    def _serve(self, method: Any, raw_body: Any, headers: Any, seen: List[Subject]) -> AppRequestReply:
+        checked = self._check(method, raw_body, headers, seen=seen)
         if isinstance(checked, AppRequestReply):
             return checked
         if checked.mode == "ask":
             return _reply(200, after=lambda: self._answer(checked))
+        started = _clock()
         try:
             _call(checked.fn, checked.subject)
         except Exception as error:
-            self._report(error, checked.subject, checked.mode)
+            self._report(error, checked.subject, checked.mode, own=True)
             return _reply(500, checked.failed)
+        self._timed(checked, started)
         return _reply(200)
 
-    def _check(self, method: Any, raw_body: Any, headers: Any) -> Union[AppRequestReply, _Run]:
+    def _timed(self, run: _Run, started: float) -> None:
+        """Reports a tell whose function ran past Siren's wait."""
+        slow = _slow(run, _clock() - started)
+        if slow is not None:
+            self._report(slow, run.subject, run.mode)
+
+    def _debug(self, seen: List[Subject], status: int, started: float) -> None:
+        """The request's one debug line, with its status and time."""
+        try:
+            took = round((_clock() - started) * 1000)
+            self._logger.debug("%s", f"Siren request handler{_describe(seen[0] if seen else None)}: {status} in {took} ms")
+        except Exception:
+            pass  # A logger that raises must not take the reply with it.
+
+    def _check(
+        self,
+        method: Any,
+        raw_body: Any,
+        headers: Any,
+        *,
+        seen: Optional[List[Subject]] = None,
+        report: bool = True,
+    ) -> Union[AppRequestReply, _Run]:
+        """The reply for a request the handler refuses, or the function to
+        run. ``seen`` collects the checked request, for the debug line.
+        ``report`` is false from ``simulate()``, which hands a refused
+        signature to no one."""
         if not isinstance(method, str) or method.upper() != "POST":
             return _reply(405, "Siren sends its requests with POST.", headers=_JSON_HEADERS + (("Allow", "POST"),))
         too_large = _reply(413, f"The request body is over {MAX_BODY_BYTES} bytes, more than Siren sends.")
@@ -765,7 +851,11 @@ class AppRequestHandler:
             except _BodyRefused as error:
                 return _reply(400, error.message)
             except SignatureVerificationError as error:
+                if report:
+                    self._report(error, None, signature=True)
                 return _reply(401, error.message)
+            if seen is not None:
+                seen.append(request)
             if request.mode == "ask":
                 wrong_siren = self._wrong_siren(request.answer_url or "")
                 if wrong_siren is not None:
@@ -786,6 +876,8 @@ class AppRequestHandler:
         try:
             _check_signature(body, names, self._secret, self._tolerance, _now())
         except SignatureVerificationError as error:
+            if report:
+                self._report(error, None, signature=True)
             return _reply(401, error.message)
         try:
             payload = json.loads(body.decode("utf-8"))
@@ -801,6 +893,8 @@ class AppRequestHandler:
             subject = WebhookEvent(type=payload["type"], data=payload["data"], delivery_id=payload["id"], raw=payload)
         else:
             subject = WebhookEvent(type=event, data=payload, delivery_id=delivery, raw=payload)
+        if seen is not None:
+            seen.append(subject)
         return _Run("event", handles, subject, f"the {event} event", f"The function for the {event} event failed, so Siren will send it again.")
 
     def _wrong_siren(self, answer_url: str) -> Optional[str]:
@@ -822,7 +916,7 @@ class AppRequestHandler:
         try:
             answer = _call(run.fn, run.subject)
         except Exception as error:
-            self._report(error, run.subject, "ask")
+            self._report(error, run.subject, "ask", own=True)
             return
         self._post(run, answer)
 
@@ -830,7 +924,7 @@ class AppRequestHandler:
         try:
             answer = await _call_async(run.fn, run.subject)
         except Exception as error:
-            self._report(error, run.subject, "ask")
+            self._report(error, run.subject, "ask", own=True)
             return
         await asyncio.to_thread(self._post, run, answer)
 
@@ -865,25 +959,76 @@ class AppRequestHandler:
             else:
                 work()
         except Exception as error:
-            self._report(error, subject)
+            # run_later is the app's own function.
+            self._report(error, subject, own=True)
 
-    def _report(self, error: BaseException, subject: Optional[Subject], mode: Optional[str] = None) -> None:
-        """Hands a failure to ``on_error``, or logs it. A failed tell's or
-        ask's line says when Siren sends the request again."""
+    def _report(
+        self,
+        error: BaseException,
+        subject: Optional[Subject],
+        mode: Optional[str] = None,
+        *,
+        own: bool = False,
+        signature: bool = False,
+    ) -> None:
+        """Hands a failure to ``on_error``, or writes the default line.
+        ``own`` is true when the app's own function raised it, the one case
+        whose line carries a traceback. ``signature`` marks a refused
+        signature."""
         try:
             if self._on_error is not None:
                 self._on_error(error, subject)
-            elif isinstance(subject, AppRequest) and mode in ("tell", "ask"):
-                words = str(error) or type(error).__name__
-                if not words.endswith((".", "!", "?")):
-                    words += "."
-                after = _next_send(error, subject, mode)
-                line = f"Siren request handler ({subject.feature['kind']} {subject.feature['key']} {subject.id}): {words}"
-                logger.error("%s", f"{line} {after}" if after else line, exc_info=error)
             else:
-                logger.error("Siren request handler: %s", error, exc_info=error)
+                self._default_line(error, subject, mode, own, signature)
         except Exception:
-            logger.exception("The Siren request handler's on_error raised while reporting: %s", error)
+            try:
+                self._logger.exception("%s", f"The Siren request handler's on_error raised while reporting: {_one_line(str(error))}")
+            except Exception:
+                pass  # A logger that raises must not take the reply or the process with it.
+
+    def _default_line(self, error: BaseException, subject: Optional[Subject], mode: Optional[str], own: bool, signature: bool) -> None:
+        """The default ``on_error``: one line through the logger. A refused
+        signature and a slow tell are warnings, and every other failure an
+        error. A failed tell's or ask's line says when Siren sends it again."""
+        if signature:
+            self._refused(error)
+            return
+        line = f"Siren request handler{_describe(subject)}: {_error_text(error)}"
+        if isinstance(error, AppSlowTellError):
+            self._logger.warning("%s", line)
+            return
+        if isinstance(subject, AppRequest) and mode in ("tell", "ask"):
+            after = _next_send(error, subject, mode)
+            if after:
+                line = f"{line} {after}"
+        self._logger.error("%s", line, exc_info=error if own else None)
+
+    def _refused(self, error: BaseException) -> None:
+        """A refused signature's warning, five a minute at most. The rest of
+        the minute are counted and written as one line when the next refusal
+        after it comes. No timer runs, so nothing keeps a process alive."""
+        now = _clock()
+        with self._refusals_lock:
+            counted = 0
+            if self._refusals_since is None or now - self._refusals_since >= 60:
+                counted = self._refusals_counted
+                self._refusals_since, self._refusals_written, self._refusals_counted = now, 0, 0
+            write = self._refusals_written < SIGNATURE_LINES_PER_MINUTE
+            if write:
+                self._refusals_written += 1
+            else:
+                self._refusals_counted += 1
+        if counted:
+            requests = "request" if counted == 1 else "requests"
+            self._logger.warning(
+                "%s",
+                f"{counted} more {requests} failed the signature check in the last minute. "
+                "When every request fails, SIREN_SIGNING_SECRET is wrong or was rotated.",
+            )
+        if write:
+            hint = _SIGNATURE_HINTS.get(getattr(error, "code", None) or "")
+            words = _one_line(str(error))
+            self._logger.warning("%s", f"Siren request handler: refused a request with 401. {words}" + (f" {hint}" if hint else ""))
 
 
 # Running a function, plain or async ----------------------------------------
@@ -891,6 +1036,56 @@ class AppRequestHandler:
 
 def _now() -> float:
     return time.time()
+
+
+def _clock() -> float:
+    """The handler's clock for timing a tell and counting refusals, in
+    seconds. Tests put a fake one here."""
+    return time.monotonic()
+
+
+def _slow(run: _Run, took: float) -> Optional[AppSlowTellError]:
+    """The error for a tell whose function ran past Siren's wait, or
+    ``None``."""
+    if run.mode != "tell" or took <= TELL_TIME_LIMIT_SECONDS:
+        return None
+    return AppSlowTellError(
+        f"{run.label} took {took:.1f} s. Siren stops waiting at {TELL_TIME_LIMIT_SECONDS} s and sends the tell again, "
+        "so it ran twice. Save what you need, hand the slow part to run_later or your own queue, and return."
+    )
+
+
+def _describe(subject: Optional[Subject]) -> str:
+    """A request's name in a line: its kind, key and id, or an event's type
+    and delivery id."""
+    if isinstance(subject, AppRequest):
+        return f" ({subject.feature['kind']} {subject.feature['key']} {subject.id})"
+    if isinstance(subject, WebhookEvent):
+        return " (" + " ".join(part for part in (subject.type, subject.delivery_id) if part) + ")"
+    return ""
+
+
+def _one_line(text: str) -> str:
+    return " ".join(text.split())
+
+
+def _error_text(error: BaseException) -> str:
+    """An error as one sentence: its message, its code when the message
+    doesn't hold it, and a cause folded in as "(cause: ...)". Never its
+    data, which can hold the app's business data."""
+    words = _one_line(str(error)) or type(error).__name__
+    stop = ""
+    if words.endswith((".", "!", "?")):
+        words, stop = words[:-1], words[-1]
+    code = getattr(error, "code", None)
+    if isinstance(code, str) and code and code not in words:
+        words += f" ({code})"
+    cause = error.__cause__
+    if isinstance(cause, BaseException):
+        told = _one_line(str(cause)).rstrip(".")
+        if told and told not in words:
+            words += f" (cause: {told})"
+    return words + (stop or ".")
 
 
 def _call(fn: Callable[[Any], Any], subject: Any) -> Any:
@@ -1045,20 +1240,25 @@ class _Asgi:
                 break
 
         handler = self._handler
+        started = _clock()
+        seen: List[Subject] = []
         body: Any = _TOO_LARGE if size > MAX_BODY_BYTES else b"".join(chunks)
-        checked = handler._check(scope.get("method"), body, list(scope.get("headers") or []))
+        checked = handler._check(scope.get("method"), body, list(scope.get("headers") or []), seen=seen)
         run: Optional[_Run] = None
         if isinstance(checked, AppRequestReply):
             reply = checked
         elif checked.mode == "ask":
             reply, run = _reply(200), checked
         else:
+            ran = _clock()
             try:
                 await _call_async(checked.fn, checked.subject)
                 reply = _reply(200)
+                handler._timed(checked, ran)
             except Exception as error:
-                handler._report(error, checked.subject, checked.mode)
+                handler._report(error, checked.subject, checked.mode, own=True)
                 reply = _reply(500, checked.failed)
+        handler._debug(seen, reply.status, started)
 
         data = reply.content
         headers = [(name.lower().encode("latin-1"), value.encode("latin-1")) for name, value in reply.headers]

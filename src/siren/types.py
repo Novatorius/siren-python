@@ -373,6 +373,11 @@ class AppRequest(Generic[D]):
     ``answer_by``, an ISO 8601 time as Siren sends it. ``feature`` holds the feature's ``kind``, ``key`` and ``id``.
     ``data`` is the question. ``timestamp`` is the Unix time Siren signed
     the send at. ``raw`` holds the whole body.
+
+    ``test`` is true for a test request, such as ``siren trigger ask`` makes
+    Siren send, and false on every real one. Siren checks a test ask's
+    answer by the kind's rules and applies nothing, so never move money or
+    write records for one. Answer it as usual and stop there.
     """
 
     version: int
@@ -388,6 +393,7 @@ class AppRequest(Generic[D]):
     timestamp: int
     delivery_id: Optional[str] = None
     raw: Dict[str, Any] = field(default_factory=dict)
+    test: bool = False
 
     @property
     def is_ask(self) -> bool:
@@ -1310,14 +1316,16 @@ class AppRequestRecord(TypedDict, total=False):
     """A request Siren sent an app, as ``GET /apps/requests`` lists it
     (``AppRequestSerializer``). ``id`` is the request key, the same on every
     send. ``feature`` is ``app:{id}`` of the feature Siren acted for.
-    ``answeredBy`` is ``app:{appId}`` or ``user:{userId}``. The data and the
-    answer stay out of the list."""
+    ``answeredBy`` is ``app:{appId}`` or ``user:{userId}``. ``test`` is true
+    for a test request, and absent on a real one. The data and the answer
+    stay out of the list."""
 
     id: str
     appId: int
     feature: str
     kind: str
     mode: str
+    test: bool
     subject: AppRequestSubject
     status: str
     sendCount: int

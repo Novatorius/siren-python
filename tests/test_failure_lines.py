@@ -97,9 +97,9 @@ def test_an_ask_without_a_readable_answer_by_leaves_the_time_out(answers, caplog
 
 
 def test_a_refused_post_says_when_siren_sends_it_again(answers, mocked_api, caplog):
-    mocked_api.post(ANSWER_PATH).respond(
-        422, json={"error": {"code": "app_answer_invalid", "message": "outcome must be allocated"}}
-    )
+    # A 422 app_answer_invalid says to reproduce the answer instead
+    # (tests/test_dx_pass4.py), since a resend would only repeat it.
+    mocked_api.post(ANSWER_PATH).respond(400, json={"error": {"message": "The request could not be read."}})
     answers.on("distributionResolver", "split-by-score", lambda request: GOOD)
     with caplog.at_level("ERROR", logger="siren"):
         run(answers, ask())

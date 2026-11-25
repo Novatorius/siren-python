@@ -93,7 +93,8 @@ def _read_signature_header(header: str) -> Tuple[int, List[str]]:
                 signatures.append(value.lower())
     if len(times) != 1 or not _SIGNED_TIME.match(times[0]) or v1_count == 0:
         raise SignatureVerificationError(
-            "The X-Siren-Signature-V2 header cannot be read. Siren sends t=<seconds>,v1=<hex signature>."
+            "The X-Siren-Signature-V2 header cannot be read. Siren sends t=<seconds>,v1=<hex signature>.",
+            code="signature_malformed",
         )
     return int(times[0]), signatures
 
@@ -118,6 +119,8 @@ def _envelope_problem(body: Any) -> Optional[str]:
     mode = body.get("mode")
     if mode not in ("tell", "ask"):
         return "The request's `mode` must be `tell` or `ask`."
+    if "test" in body and not isinstance(body["test"], bool):
+        return "The request's `test` must be true or false."
     if not isinstance(body.get("app"), str) or body["app"] == "":
         return "The request's `app` must be the app's key, as text."
     feature = body.get("feature")
@@ -162,13 +165,14 @@ def _check_signature(body_bytes: bytes, headers: Mapping[str, HeaderValue], secr
     the same way (WebhookSignature::headers() in Siren)."""
     v2 = _header(headers, "X-Siren-Signature-V2")
     if v2 is None:
-        raise SignatureVerificationError("The request has no X-Siren-Signature-V2 header.")
+        raise SignatureVerificationError("The request has no X-Siren-Signature-V2 header.", code="signature_missing")
     signed_at, signatures = _read_signature_header(v2)
 
     stamp = _header(headers, "X-Siren-Timestamp")
     if stamp is not None and stamp != str(signed_at):
         raise SignatureVerificationError(
-            "The X-Siren-Timestamp header differs from the time X-Siren-Signature-V2 signed."
+            "The X-Siren-Timestamp header differs from the time X-Siren-Signature-V2 signed.",
+            code="timestamp_mismatch",
         )
 
     expected = hmac.new(secret.encode("utf-8"), f"{signed_at}.".encode("ascii") + body_bytes, hashlib.sha256).hexdigest()
@@ -178,13 +182,15 @@ def _check_signature(body_bytes: bytes, headers: Mapping[str, HeaderValue], secr
         matched = hmac.compare_digest(expected, signature) or matched
     if not matched:
         raise SignatureVerificationError(
-            "The request signature does not match. Pass the raw body exactly as received and the signing secret of this app."
+            "The request signature does not match. Pass the raw body exactly as received and the signing secret of this app.",
+            code="signature_mismatch",
         )
 
     if abs(clock - signed_at) > tolerance:
         raise SignatureVerificationError(
             f"The request's signed timestamp is more than {tolerance} seconds from this machine's clock, "
-            "so it may be a replay. Check the clock if every request fails."
+            "so it may be a replay. Check the clock if every request fails.",
+            code="timestamp_out_of_tolerance",
         )
     return signed_at
 
@@ -577,6 +583,7 @@ class Apps:
         run_later: Optional[Callable[[Callable[[], None]], Any]] = None,
         on_error: Optional[Callable[..., Any]] = None,
         extra_kinds: Optional[Iterable[str]] = None,
+        logger: Optional[Any] = None,
     ) -> "AppRequestHandler":
         """One address for everything Siren sends the app: it checks each
         request as :meth:`verify_request` does, runs the function registered
@@ -591,16 +598,22 @@ class Apps:
         ``run_later`` is handed an ask's work, a callable with no arguments,
         in place of running it after the reply, for a host that stops work
         once it has replied. ``on_error(error, request)`` gets every failure
-        the reply can't show. It logs to the ``siren`` logger by default,
-        with a line that says when Siren sends a failed request again.
+        the reply can't show, a refused signature and a tell slower than
+        8 seconds among them. By default it writes one line through
+        ``logger``, which says when Siren sends a failed request again.
+
+        ``logger`` is a :class:`logging.Logger`, or anything with ``debug``,
+        ``info``, ``warning`` and ``error``, such as a ``LoggerAdapter``. It
+        is the ``siren`` logger by default. The handler writes one ``debug``
+        line there per request it handles.
 
         ``extra_kinds`` lists kinds a newer Siren sends that this SDK doesn't
         know yet, for :meth:`AppRequestHandler.on` to take.
 
         Raises :class:`~siren.AppHandlerError` for no secret, a tolerance
         outside 1 to :data:`MAX_TOLERANCE_SECONDS`, a ``run_later`` or
-        ``on_error`` that is not callable, and an ``extra_kinds`` that is not
-        a list of kind names.
+        ``on_error`` that is not callable, a ``logger`` that is not one, and
+        an ``extra_kinds`` that is not a list of kind names.
         """
         from .app_requests import AppRequestHandler
 
@@ -618,6 +631,7 @@ class Apps:
             run_later=run_later,
             on_error=on_error,
             extra_kinds=extra_kinds,
+            logger=logger,
         )
 
     @staticmethod
@@ -764,6 +778,7 @@ class Apps:
             id=body["id"],
             type=body["type"],
             mode=body["mode"],
+            test=body.get("test") is True,
             app=body["app"],
             feature={"kind": body["feature"]["kind"], "key": body["feature"]["key"], "id": body["feature"]["id"]},
             created_at=body["createdAt"],

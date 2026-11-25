@@ -264,3 +264,23 @@ def test_the_readme_answer_is_the_one_siren_and_its_screens_show(kind):
     samples score only the collaborator who triggered, so their answers are
     held by the run above instead."""
     assert json.loads(snippet(f"answer-{kind}", "json")) == CONTRACTS["kinds"][kind]["answer"]
+
+
+def test_the_payout_sample_answers_a_test_request_without_paying(monkeypatch):
+    """The payout method sample's other path: a test request, as
+    ``siren trigger ask`` makes Siren send, gets an answer that pays nothing,
+    and ``pay_once`` is never called. The run above covers the real payout."""
+    monkeypatch.setenv("SIREN_API_KEY", APP_KEY)
+    monkeypatch.setenv("SIREN_SIGNING_SECRET", SECRET)
+    paid: List[Any] = []
+    scope: Dict[str, Any] = {"__name__": "sample", "pay_once": lambda *args: paid.append(args)}
+    exec(compile(sample("payoutMethod"), "README sample for payoutMethod", "exec"), scope)
+    request = CONTRACTS["kinds"]["payoutMethod"]["request"]
+    made = testing.app_request("payoutMethod", request["feature"]["key"], data=request["data"], secret=SECRET, test=True)
+
+    result = scope["answers"].simulate(made)
+
+    assert result.error is None, result.error
+    assert result.answer["outcome"] == "failed"
+    keeps_the_rules("payoutMethod", request["data"], result.answer)
+    assert paid == []

@@ -14,13 +14,14 @@ Quickstart::
 """
 
 from ._version import __version__
-from .app_requests import AppAnswerLater, AppAskResult, AppRequestHandler, AppRequestReply, AppSimulation
+from .app_requests import TELL_TIME_LIMIT_SECONDS, AppAnswerLater, AppAskResult, AppRequestHandler, AppRequestReply, AppSimulation
 from .apps import AppFeatures
 from .browser_tokens import BrowserTokenHandler
 from .client import Siren
 from .errors import (
     ApiError,
     AppHandlerError,
+    AppSlowTellError,
     ApiKeyNotAcceptedError,
     AuthenticationError,
     BadRequestError,
@@ -142,9 +143,11 @@ __all__ = [
     "AppSimulation",
     "AppAnswerLater",
     "AppAskResult",
+    "TELL_TIME_LIMIT_SECONDS",
     # Errors
     "SirenError",
     "AppHandlerError",
+    "AppSlowTellError",
     "BadRequestError",
     "AuthenticationError",
     "ApiKeyNotAcceptedError",

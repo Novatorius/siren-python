@@ -226,7 +226,11 @@ class ConnectionError(SirenError):  # noqa: A001 - name mandated by the SDK cont
 
 
 class SignatureVerificationError(SirenError):
-    """Webhook signature verification failed (no HTTP status)."""
+    """A webhook's or an app request's signature failed its check (no HTTP
+    status). For an app request ``code`` says which check:
+    ``signature_missing``, ``signature_malformed``, ``timestamp_mismatch``,
+    ``signature_mismatch`` or ``timestamp_out_of_tolerance``. The request
+    handler hands it to ``on_error`` and still replies 401."""
 
 
 class AppHandlerError(SirenError):
@@ -236,6 +240,14 @@ class AppHandlerError(SirenError):
     function that returned nothing or an answer it can't post, and a bad
     argument to ``simulate()``. The Node and PHP SDKs raise their own
     ``AppHandlerError`` for the same mistakes. It carries no HTTP status."""
+
+
+class AppSlowTellError(SirenError):
+    """A tell whose function took longer than Siren waits for its reply
+    (``TELL_TIME_LIMIT_SECONDS``, 8). The handler still replied 200, but
+    Siren had stopped waiting, counted a timeout and sends the tell again,
+    so the function ran twice. ``on_error`` gets it, and ``simulate()``
+    returns it. The Node and PHP SDKs report the same case."""
 
 
 _STATUS_TO_ERROR = {
