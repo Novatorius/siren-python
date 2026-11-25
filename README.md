@@ -39,11 +39,11 @@ Answer Siren Cloud from your own app with one request handler, and record sales,
   (`apps.verify_request()`, `apps.requests.answer()`).
 - Record sales, refunds and referred visits (`events`).
 - Verify signed webhook deliveries in one constant-time call (`webhooks`).
-- Read Siren's ledger and manage webhook subscriptions with an API key that
-  holds the ledger and webhook scopes.
+- Read Siren's ledger with an API key that holds the ledger scopes, and read
+  an app's webhook address and its deliveries with a signed-in dashboard
+  session.
 - Add, read, change and remove an app's features with a signed-in dashboard
   session (`apps.features`).
-- Manage API keys with a signed-in dashboard session.
 - Reconcile Siren's ledger against your own with paginated readers.
 
 The full developer surface is described in the
@@ -193,8 +193,9 @@ client. That app then posts its answer to Siren, which refuses a request id
 it never sent, so `simulate()` is the way to see an answer before Siren sends
 real requests.
 
-A tell's function that runs longer than Siren's 8 seconds comes back from
-`simulate()` with an `AppSlowTellError` in `error`, so a test catches it.
+A tell's or `on_event` function that runs longer than Siren's 8 seconds
+comes back from `simulate()` with an `AppSlowTellError` in `error`, so a test
+catches it.
 
 #### Test requests
 
@@ -346,13 +347,14 @@ options:
   place of running it after the reply. Pass it on a host that stops work once
   it has replied, such as a function host, or to send the work to a queue.
   A tell's function can call your `run_later` too, for the slow part of its
-  work. A tell must finish within Siren's 8 seconds
-  (`siren.TELL_TIME_LIMIT_SECONDS`), so save what you need, hand the rest
-  over and return.
+  work. A tell or an `on_event` function must finish within Siren's 8
+  seconds (`siren.TELL_TIME_LIMIT_SECONDS`), so save what you need, hand the
+  rest over and return.
 - `on_error(error, request)` gets every failure the reply can't show: a
   function that raised, an answer Siren refused, a refused signature
   (`SignatureVerificationError`, still answered 401, with `request` `None`)
-  and a tell that took longer than 8 seconds (`AppSlowTellError`). By
+  and a tell or `on_event` function that took longer than 8 seconds
+  (`AppSlowTellError`). By
   default it writes one line through `logger` with the kind, key and request
   id, or an event's type and delivery id, then the error's message and code.
   A traceback follows only when your own function raised. A failed tell's or
@@ -421,7 +423,7 @@ replies:
 | An ask with a function | 200 at once. The function runs after the reply, and the handler posts what it returns, or nothing for `answers.later()` |
 | When your function fails | A tell gets 500, and Siren tries again about 1, 2, 4 and 8 minutes later. An ask already got its 200, so Siren sends it again when its answer window closes, 60 minutes by default, and you can resend it sooner with `siren apps resend <id>` |
 | A kind and key with no function | 404 `No function handles <kind> <key>.`, so Siren shows the request under Needs attention once its sends run out |
-| Another `X-Siren-Event`, such as `conversion.approved` | 200 once the `on_event` function returns, 500 when it raises, and 200 when there is none |
+| Another `X-Siren-Event`, such as `conversion.approved` | 200 once the `on_event` function returns, 500 when it raises, and 200 when there is none. Like a tell, the function must finish within 8 seconds, and a slower one reaches `on_error` as an `AppSlowTellError` |
 
 Every reply is JSON with `Cache-Control: no-store`, and its words never hold
 the secret or the body. [Errors and retries](#errors-and-retries) says what
@@ -1286,7 +1288,7 @@ The errors the SDK raises all subclass `siren.SirenError`, with `message`,
 | When | Error |
 |---|---|
 | A request's signature, time or envelope fails a check | `SignatureVerificationError`, with the reason, and a `code` for a failed signature or time |
-| A tell's function ran past Siren's 8 seconds | `AppSlowTellError`, to `on_error` and from `simulate()` |
+| A tell's or `on_event` function ran past Siren's 8 seconds | `AppSlowTellError`, to `on_error` and from `simulate()` |
 | A mistake in the app's code that the handler finds: an unknown kind, a second function for one kind and key, a bad option, a function that returns nothing or an answer it can't post, a bad argument to `simulate()` | `AppHandlerError` |
 | A bad argument to `apps.requests.answer()`, `list()`, `retrieve()` or `resend()`, before anything is sent | `ValueError` |
 | Siren takes no answer from this key | `AuthenticationError`, `code` `ErrorCode.APP_ANSWER_UNAUTHORIZED` |
@@ -1411,25 +1413,24 @@ if client.webhooks.verify_signature(raw_body, signature_header, secret):
     ...
 ```
 
-#### Manage subscriptions
+#### Webhook addresses
 
-The API key needs the `webhook-subscriptions:manage` scope. A key with
-`webhook-subscriptions:read` can call `list()` only.
+An API key and a webhook address are parts of an app. Siren makes, changes,
+rotates and revokes them through its `/apps` routes, with a signed-in
+session: declare the app's `url` and `events` in `siren.app.json` and run
+`siren apps apply`, rotate the key with `siren apps rotate-key`, or use the
+app's page in Siren Cloud. Run the `siren` CLI with npx, as
+[Develop on your machine](#develop-on-your-machine) says. Siren has no
+`POST /webhooks` and no `/api-keys` routes.
+
+The SDK reads and removes an app's address with a signed-in dashboard
+session's token, passed as `api_key`. No API key may call a webhook or apps
+route: Siren answers it with 401 and `error.code` `api_key_not_accepted`.
 
 <!-- readme-test: subscriptions -->
 ```python
-subscription = client.webhooks.subscriptions.create(
-    target_url="https://example.com/webhooks/siren",
-    events=[
-        siren.WebhookEventType.CONVERSION_APPROVED,
-        siren.WebhookEventType.PAYOUT_PAID,
-    ],
-    # or events=[siren.WebhookEventType.ALL] to subscribe to everything
-)
-print(subscription.signing_secret)  # returned ONCE — store it now
-
 client.webhooks.subscriptions.list()
-client.webhooks.subscriptions.delete(subscription.id)
+client.webhooks.subscriptions.delete(subscription_id)
 ```
 
 ## What is Siren?
@@ -1452,10 +1453,9 @@ This SDK is the official Python client for the Siren API.
   `apps.split_pool()` splits a resolver's pool in whole currency steps.
 - **One-call webhook verification** — `webhooks.construct_event` verifies the
   HMAC-SHA256 signature in constant time and parses the payload.
-- **Subscription management** — create, list, and delete subscriptions with an
-  API key that holds a webhook scope, or a dashboard session.
-- **API-key management** — create, list, and revoke API keys with a signed-in
-  dashboard session. One-time secrets are never auto-retried.
+- **Webhook addresses** — list and remove an app's address with a signed-in
+  dashboard session. An app's key and address are made through the apps
+  routes, with `siren apps apply`.
 - **Reconciliation readers** — paginated access to conversions, transactions,
   obligations, and payouts, with an API key that holds the ledger scopes.
 - **Typed, correct errors** — every failure subclasses `siren.SirenError` with
@@ -1477,45 +1477,28 @@ names each one:
 | `ApiKeyScope.LEDGER_TRANSACTIONS_READ` (`ledger:transactions:read`) | `transactions.list()` |
 | `ApiKeyScope.LEDGER_OBLIGATIONS_READ` (`ledger:obligations:read`) | `obligations.list()` |
 | `ApiKeyScope.LEDGER_PAYOUTS_READ` (`ledger:payouts:read`) | `payouts.list()` |
-| `ApiKeyScope.WEBHOOK_SUBSCRIPTIONS_READ` (`webhook-subscriptions:read`) | `webhooks.subscriptions.list()` |
-| `ApiKeyScope.WEBHOOK_SUBSCRIPTIONS_MANAGE` (`webhook-subscriptions:manage`) | Every `webhooks.subscriptions` call, and a test delivery (`POST /webhooks/{id}/test`, which the SDK has no method for) |
 
-Siren grants the ledger and webhook scopes only by their exact names. `*`,
+Siren grants the ledger scopes only by their exact names. `*`,
 `event:*`, wildcards such as `ledger:*`, and older names such as
 `conversions:read` grant none of them, so a key made before these scopes
 existed reads nothing until you replace it with one that holds them. A key's
 requests count against the organization's API rate limit.
 
-`api_keys` takes a signed-in dashboard session's token, passed as `api_key`.
-No API key scope reaches it, and Siren answers a key there with
-`ApiKeyNotAcceptedError`. The reconciliation readers also take a dashboard
-session's token or a connected site's token.
+The two webhook scopes, `webhook-subscriptions:read` and the manage scope,
+are retired. A key that still holds one keeps the string, and it opens
+nothing. Webhook and apps routes take a signed-in session only, and Siren
+answers a key there with `ApiKeyNotAcceptedError`. The reconciliation readers
+also take a dashboard session's token or a connected site's token.
 
 A key created with a `property_id` is bound to that store. It reads only its
 own store's conversions, transactions and obligations, and Siren refuses it
-on payouts and webhook subscriptions with `StoreKeyNotAllowedError`. An
+on payouts with `StoreKeyNotAllowedError`. An
 organization-wide key reads the whole organization, and narrows a ledger read
 to one store with `property_id`:
 
 <!-- readme-test: store-scope -->
 ```python
 client.conversions.list(property_id=5, status="approved")
-```
-
-### API keys
-
-<!-- readme-test: api-keys -->
-```python
-from siren import ApiKeyScope
-
-key = client.api_keys.create(
-    label="Accounting export",
-    scopes=[ApiKeyScope.LEDGER_CONVERSIONS_READ, ApiKeyScope.LEDGER_PAYOUTS_READ],
-)
-print(key.raw_key)  # sk_live_... — returned ONCE, cannot be retrieved later
-
-client.api_keys.list()      # no raw key material
-client.api_keys.revoke(key.id)
 ```
 
 ### App features

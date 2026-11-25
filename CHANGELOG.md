@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 
+- An `on_event` function is timed like a tell's. Past Siren's 8 seconds it
+  reaches `on_error` as an `AppSlowTellError` named by the event's type, and
+  `simulate()` returns it, as the PHP SDK already does. Siren delivers webhook
+  events with the same 8-second timeout, so a slower function ran twice
+  without a word.
+- The README no longer documents `api_keys` or
+  `webhooks.subscriptions.create`. Siren answers `/api-keys` with 404 and
+  `POST /webhooks` with 405, because an API key and a webhook address are
+  parts of an app, made through `/apps` with `siren apps apply`. It no longer
+  lists the retired `webhook-subscriptions` scopes as opening anything. The
+  methods stay until the SDK's resources follow Siren's routes.
 - The request handler hands a refused signature to `on_error` as a
   `SignatureVerificationError`, with `None` for the request, where it
   replied 401 and said nothing. The reply is still 401. A custom `on_error`

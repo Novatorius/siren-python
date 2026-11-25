@@ -243,10 +243,10 @@ class AppHandlerError(SirenError):
 
 
 class AppSlowTellError(SirenError):
-    """A tell whose function took longer than Siren waits for its reply
-    (``TELL_TIME_LIMIT_SECONDS``, 8). The handler still replied 200, but
-    Siren had stopped waiting, counted a timeout and sends the tell again,
-    so the function ran twice. ``on_error`` gets it, and ``simulate()``
+    """A tell or an ``on_event`` function that took longer than Siren waits
+    for its reply (``TELL_TIME_LIMIT_SECONDS``, 8). The handler still
+    replied 200, but Siren had stopped waiting, counted a timeout and sends
+    it again, so the function ran twice. ``on_error`` gets it, and ``simulate()``
     returns it. The Node and PHP SDKs report the same case."""
 
 

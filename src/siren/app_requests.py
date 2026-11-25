@@ -127,11 +127,11 @@ __all__ = [
 #: requests are far smaller, since an answer alone stays under 16 KB.
 MAX_BODY_BYTES = 1024 * 1024
 
-#: How long Siren waits for a tell's reply, in seconds. Siren's
-#: WebhookDeliveryService::deliver() sends through GuardedCurlHttpClient
-#: with an 8-second timeout, and counts a slower reply as a failed send, so
-#: it sends the tell again. A tell whose function runs longer reaches
-#: ``on_error`` as :class:`~siren.AppSlowTellError`.
+#: How long Siren waits for a tell's or a webhook event's reply, in seconds.
+#: Siren's WebhookDeliveryService::deliver() sends both through
+#: GuardedCurlHttpClient with an 8-second timeout, and counts a slower reply
+#: as a failed send, so it sends it again. A tell or ``on_event`` function
+#: that runs longer reaches ``on_error`` as :class:`~siren.AppSlowTellError`.
 TELL_TIME_LIMIT_SECONDS = 8
 
 #: The handler's default logger. ``request_handler(logger=...)`` replaces it.
@@ -802,7 +802,7 @@ class AppRequestHandler:
         return _reply(200)
 
     def _timed(self, run: _Run, started: float) -> None:
-        """Reports a tell whose function ran past Siren's wait."""
+        """Reports a tell or an event whose function ran past Siren's wait."""
         slow = _slow(run, _clock() - started)
         if slow is not None:
             self._report(slow, run.subject, run.mode)
@@ -1045,12 +1045,15 @@ def _clock() -> float:
 
 
 def _slow(run: _Run, took: float) -> Optional[AppSlowTellError]:
-    """The error for a tell whose function ran past Siren's wait, or
-    ``None``."""
-    if run.mode != "tell" or took <= TELL_TIME_LIMIT_SECONDS:
+    """The error for a tell or a webhook event whose function ran past
+    Siren's wait, or ``None``. Siren delivers both with the same 8-second
+    timeout, so a slower function runs twice. An event is named by its type,
+    as the PHP SDK names it."""
+    if run.mode not in ("tell", "event") or took <= TELL_TIME_LIMIT_SECONDS:
         return None
+    name = run.subject.type if isinstance(run.subject, WebhookEvent) else run.label
     return AppSlowTellError(
-        f"{run.label} took {took:.1f} s. Siren stops waiting at {TELL_TIME_LIMIT_SECONDS} s and sends the tell again, "
+        f"{name} took {took:.1f} s. Siren stops waiting at {TELL_TIME_LIMIT_SECONDS} s and sends the {run.mode} again, "
         "so it ran twice. Save what you need, hand the slow part to run_later or your own queue, and return."
     )
 

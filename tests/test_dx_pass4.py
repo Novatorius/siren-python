@@ -422,6 +422,75 @@ def test_a_slow_tell_under_asgi_reaches_on_error(client, clock):
     assert [type(error) for error in seen] == [siren.AppSlowTellError]
 
 
+# Follow-up: an onEvent function past Siren's 8 seconds, as PHP times it ---------
+
+
+SLOW_EVENT = (
+    "conversion.approved took 9.0 s. Siren stops waiting at 8 s and sends the event again, "
+    "so it ran twice. Save what you need, hand the slow part to run_later or your own queue, and return."
+)
+DELIVERY = "evt_" + "b2" * 16
+
+
+def slow_event_handler(client, clock, **options):
+    answers = client.apps.request_handler(SECRET, **options)
+    answers.on_event("conversion.approved", lambda event: clock.advance(9))
+    return answers
+
+
+def slow_event():
+    return testing.webhook_event("conversion.approved", secret=SECRET, delivery_id=DELIVERY)
+
+
+def test_a_slow_event_function_still_replies_200_and_reaches_on_error(client, clock):
+    seen: List[Any] = []
+    answers = slow_event_handler(client, clock, on_error=lambda error, event: seen.append((error, event)))
+    assert run(answers, slow_event()).status == 200
+    [(error, event)] = seen
+    assert isinstance(error, siren.AppSlowTellError)
+    assert str(error) == SLOW_EVENT
+    assert event.type == "conversion.approved"
+
+
+def test_a_slow_event_function_warns_by_default(client, clock, caplog):
+    answers = slow_event_handler(client, clock)
+    with caplog.at_level("WARNING", logger="siren"):
+        run(answers, slow_event())
+    assert lines(caplog) == [("WARNING", f"Siren request handler (conversion.approved {DELIVERY}): {SLOW_EVENT}")]
+
+
+def test_simulate_returns_a_slow_event_function_as_its_error(client, clock):
+    result = slow_event_handler(client, clock).simulate(slow_event())
+    assert result.status == 200
+    assert isinstance(result.error, siren.AppSlowTellError) and str(result.error) == SLOW_EVENT
+
+
+def test_an_event_function_within_the_limit_is_no_error(client, clock):
+    answers = client.apps.request_handler(SECRET)
+    answers.on_event("conversion.approved", lambda event: clock.advance(7.9))
+    assert answers.simulate(slow_event()).error is None
+
+
+def test_a_slow_event_function_under_asgi_reaches_on_error(client, clock):
+    import asyncio
+
+    seen: List[Any] = []
+    answers = slow_event_handler(client, clock, on_error=lambda error, event: seen.append(error))
+    event = slow_event()
+    sent: List[Any] = []
+
+    async def receive():
+        return {"type": "http.request", "body": event.raw_body, "more_body": False}
+
+    async def send(message):
+        sent.append(message)
+
+    scope = {"type": "http", "method": "POST", "headers": [(k.lower().encode(), v.encode()) for k, v in event.headers.items()]}
+    asyncio.run(answers.asgi(scope, receive, send))
+    assert sent[0]["status"] == 200
+    assert [type(error) for error in seen] == [siren.AppSlowTellError]
+
+
 # Finding 4: signed webhook events ---------------------------------------------
 
 
@@ -641,3 +710,26 @@ def test_the_readme_reply_table_holds_the_tell_limit():
 def test_the_readme_names_the_logger_option():
     assert "`logger` is where the default `on_error` writes" in WORDS
     assert "Siren request handler: refused a request with 401." in WORDS
+
+
+# Follow-up: the README documents only routes Siren serves ----------------------
+#
+# Siren's docs on feat/apps: docs/api/api-keys.md (an app owns its key, and
+# /api-keys answers 404), docs/api/webhooks-api.md (no POST /webhooks, which
+# answers 405, and an address is made through /apps) and auth-api-keys.md (no
+# API key may call a webhook or apps route: 401 api_key_not_accepted, and the
+# webhook-subscriptions scopes are retired).
+
+
+def test_the_readme_documents_no_route_siren_answers_with_404_or_405():
+    text = (Path(__file__).resolve().parent.parent / "README.md").read_text()
+    for gone in ("api_keys", "subscriptions.create", "WEBHOOK_SUBSCRIPTIONS_", "webhook-subscriptions:manage"):
+        assert gone not in text, f"README still documents {gone}"
+
+
+def test_the_readme_says_an_app_holds_its_key_and_address():
+    text = " ".join((Path(__file__).resolve().parent.parent / "README.md").read_text().split())
+    assert "An API key and a webhook address are parts of an app." in text
+    assert "siren apps apply" in text and "siren apps rotate-key" in text
+    assert "api_key_not_accepted" in text
+    assert "webhook-subscriptions:read" in text and "retired" in text

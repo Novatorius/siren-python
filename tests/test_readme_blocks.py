@@ -193,27 +193,16 @@ def run_verify_signature(api: respx.MockRouter) -> None:
 
 
 def run_subscriptions(api: respx.MockRouter) -> None:
-    made = api.post("/webhooks").respond(201, json={"id": 6, "targetUrl": "https://example.com/webhooks/siren", "events": ["conversion.approved", "payout.paid"], "signingSecret": "whsec_only_once"})
     listed = api.get("/webhooks").respond(200, json=[])
     removed = api.delete("/webhooks/6").respond(200, json={"success": True})
-    printed = _run("subscriptions", {"siren": siren, "client": siren.Siren(api_key="sk_test")})
-    assert printed.strip() == "whsec_only_once"
-    assert made.called and listed.called and removed.called
+    _run("subscriptions", {"client": siren.Siren(api_key="session-token"), "subscription_id": 6})
+    assert listed.called and removed.called
 
 
 def run_store_scope(api: respx.MockRouter) -> None:
     listed = api.get("/conversions").respond(200, json={"items": [], "total": 0, "page": 1, "perPage": 50, "totalPages": 0})
     _run("store-scope", {"client": siren.Siren(api_key="sk_test")})
     assert listed.calls.last.request.url.params["propertyId"] == "5"
-
-
-def run_api_keys(api: respx.MockRouter) -> None:
-    made = api.post("/api-keys").respond(201, json={"id": 2, "keyPrefix": "sk_live_bbbb", "label": "Accounting export", "rawKey": "sk_live_x"})
-    listed = api.get("/api-keys").respond(200, json=[])
-    revoked = api.delete("/api-keys/2").respond(200)
-    printed = _run("api-keys", {"client": siren.Siren(api_key="sk_test")})
-    assert printed.strip() == "sk_live_x"
-    assert made.called and listed.called and revoked.called
 
 
 def run_reconciliation(api: respx.MockRouter) -> None:
@@ -324,7 +313,6 @@ RUN: Dict[str, Callable[..., None]] = {
     "verify-signature": run_verify_signature,
     "subscriptions": run_subscriptions,
     "store-scope": run_store_scope,
-    "api-keys": run_api_keys,
     "reconciliation": run_reconciliation,
     "errors": run_errors,
     "configuration": run_configuration,
